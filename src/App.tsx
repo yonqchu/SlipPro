@@ -28,7 +28,9 @@ import {
   X,
   FileText,
   BarChart3,
-  ChevronLeft
+  ChevronLeft,
+  Copy,
+  ExternalLink
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import QRCode from "qrcode";
@@ -65,6 +67,7 @@ interface Transaction {
   total: number;
   slipThumbnail: string | null;
   lowStockAlerts: string[];
+  paymentMethod?: "เงินสด" | "เงินโอน";
 }
 
 // Default items
@@ -207,6 +210,21 @@ const TRANSLATIONS = {
     tapToOrder: "Tap to Order",
     noLimit: "No Limit",
     copiedText: "LINE Share text prepared!",
+    paymentMethodSection: "Payment Method",
+    paymentMethodRequired: "Please choose a payment method (Cash or Transfer)!",
+    cashOption: "Cash",
+    transferOption: "Bank Transfer",
+    paymentMethodPrompt: "Select how the customer paid (Required):",
+    lineSharePrepared: "LINE Order Ready to Send!",
+    lineShareInstructions: "Sale recorded! Tap below to open LINE or copy the order message.",
+    openLineApp: "Open LINE App",
+    copyOrderText: "Copy Order Text",
+    copiedSuccess: "Copied to clipboard!",
+    newSaleBtn: "New Sale",
+    shareViaApp: "Share via Apps",
+    resendToLine: "Send to LINE",
+    cashBreakdown: "Cash Payments",
+    transferBreakdown: "Bank Transfers",
     
     // Phase 2 Translation Keys
     tabRegister: "Register",
@@ -314,6 +332,21 @@ const TRANSLATIONS = {
     tapToOrder: "แตะเพื่อสั่งสินค้า",
     noLimit: "ไม่จำกัด",
     copiedText: "เตรียมข้อความแชร์ LINE เรียบร้อย!",
+    paymentMethodSection: "วิธีการชำระเงิน",
+    paymentMethodRequired: "กรุณาเลือกวิธีการชำระเงิน (เงินสด หรือ เงินโอน)!",
+    cashOption: "เงินสด",
+    transferOption: "เงินโอน",
+    paymentMethodPrompt: "เลือกว่าลูกค้าชำระเงินด้วยวิธีใด (จำเป็น):",
+    lineSharePrepared: "เตรียมส่งข้อมูลไปที่ LINE เรียบร้อย!",
+    lineShareInstructions: "บันทึกยอดขายแล้ว! กดปุ่มด้านล่างเพื่อเปิด LINE หรือคัดลอกข้อความ",
+    openLineApp: "เปิดแอป LINE",
+    copyOrderText: "คัดลอกข้อความ",
+    copiedSuccess: "คัดลอกลงคลิปบอร์ดแล้ว!",
+    newSaleBtn: "เริ่มบิลใหม่",
+    shareViaApp: "แชร์ผ่านแอปอื่น",
+    resendToLine: "ส่งเข้า LINE",
+    cashBreakdown: "ชำระด้วยเงินสด",
+    transferBreakdown: "ชำระด้วยเงินโอน",
     tabRegister: "หน้าขายสินค้า (Register)",
     tabHistory: "ประวัติ (History)",
     nextBtn: "ถัดไป (Next)",
@@ -385,6 +418,18 @@ export default function App() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showToast, setShowToast] = useState<string | null>(null);
 
+  // Payment Method & LINE Share States
+  const [paymentMethod, setPaymentMethod] = useState<"เงินสด" | "เงินโอน" | null>(null);
+  const [paymentMethodError, setPaymentMethodError] = useState(false);
+  const [lineOrderModal, setLineOrderModal] = useState<{
+    isOpen: boolean;
+    message: string;
+    shareUrl: string;
+    paymentMethod: "เงินสด" | "เงินโอน";
+    total: number;
+    hasSlip: boolean;
+  } | null>(null);
+  const [copySuccess, setCopySuccess] = useState(false);
 
   // Phase 2 State Declarations
   const [activeTab, setActiveTab] = useState<"register" | "history" | "checkout" | "zreport">("register");
@@ -594,6 +639,8 @@ export default function App() {
           const compressedBase64 = canvas.toDataURL("image/jpeg", 0.7);
           
           setCapturedSlip(compressedBase64);
+          setPaymentMethod("เงินโอน");
+          setPaymentMethodError(false);
           try {
             localStorage.setItem("slippro_current_slip_v1", compressedBase64);
           } catch (err) {
@@ -629,12 +676,23 @@ export default function App() {
   // Send to Boss Handler
   const handleSendToBoss = () => {
     if (cart.length === 0) return;
+    if (!paymentMethod) {
+      setPaymentMethodError(true);
+      triggerToast(t.paymentMethodRequired);
+      return;
+    }
+    setPaymentMethodError(false);
     setShowConfirmModal(true);
   };
 
   // Confirm stock deduction and share to LINE
   const confirmAndSend = () => {
     setShowConfirmModal(false);
+    if (!paymentMethod) {
+      setPaymentMethodError(true);
+      triggerToast(t.paymentMethodRequired);
+      return;
+    }
 
     // 1. Deduct quantities from stock state for items where trackStock is true
     const updatedMenuItems = menuItems.map(item => {
@@ -673,8 +731,13 @@ export default function App() {
       year: "numeric"
     });
 
+    const chosenPayment = paymentMethod;
+    const paymentText = chosenPayment === "เงินสด" ? "💵 เงินสด (Cash)" : "📲 เงินโอน (Bank Transfer)";
+
     let message = `🚀 --- SlipPro Sale Order ---\n`;
+    message += `🏪 Shop: ${shopProfile.name}\n`;
     message += `📅 Date: ${dateStr} | ⏰ Time: ${timestampStr}\n`;
+    message += `💳 Payment: ${paymentText}\n`;
     message += `-------------------------\n`;
     
     cart.forEach(c => {
@@ -684,7 +747,7 @@ export default function App() {
     
     message += `-------------------------\n`;
     message += `💰 TOTAL: ฿${cartTotal}\n`;
-    message += `🧾 Slip Status: ${capturedSlip ? "✅ Attached / แนบแล้ว" : "❌ Not Attached / ไม่พบสลิป"}\n`;
+    message += `🧾 Slip Status: ${capturedSlip ? "✅ Attached / แนบสลิปแล้ว" : (chosenPayment === "เงินโอน" ? "📲 Transfer (No Slip attached)" : "💵 Cash Payment")}\n`;
 
     if (lowStockAlerts.length > 0) {
       message += `\n${t.lowStockAlertText}\n`;
@@ -705,38 +768,61 @@ export default function App() {
       })),
       total: cartTotal,
       slipThumbnail: capturedSlip,
-      lowStockAlerts: lowStockAlerts
+      lowStockAlerts: lowStockAlerts,
+      paymentMethod: chosenPayment
     };
 
     const updatedTransactions = [newTransaction, ...transactions];
     setTransactions(updatedTransactions);
     localStorage.setItem("slippro_transactions_v1", JSON.stringify(updatedTransactions));
 
-    // 5. Open line share scheme
-    const lineShareUrl = (shopProfile as any).lineId 
-      ? `https://line.me/R/oaMessage/${(shopProfile as any).lineId}/?${encodeURIComponent(message)}`
-      : `https://line.me/R/share?text=${encodeURIComponent(message)}`;
-    
+    // 5. Universal LINE share link
+    const lineShareUrl = `https://line.me/R/share?text=${encodeURIComponent(message)}`;
+
+    // Auto-copy order details to clipboard for instant pasting anywhere
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(message).catch(() => {});
+    }
+
+    // Synchronous window open attempt directly in user gesture
+    try {
+      window.open(lineShareUrl, "_blank");
+    } catch (e) {
+      console.warn("Direct window.open blocked by browser:", e);
+    }
+
+    // Open LINE sharing confirmation modal
+    setLineOrderModal({
+      isOpen: true,
+      message,
+      shareUrl: lineShareUrl,
+      paymentMethod: chosenPayment,
+      total: cartTotal,
+      hasSlip: !!capturedSlip
+    });
+
     // Clear cart and slip
     setCart([]);
     setCapturedSlip(null);
+    setPaymentMethod(null);
+    setPaymentMethodError(false);
     localStorage.removeItem("slippro_current_slip_v1");
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
 
     triggerToast(t.saleSuccessToast);
-
-    // Open LINE redirect URL
-    setTimeout(() => {
-      window.open(lineShareUrl, "_blank");
-      setActiveTab("register");
-    }, 1200);
   };
 
   const handleResendToLine = (tx: Transaction) => {
+    const paymentText = (tx.paymentMethod === "เงินโอน" || (!tx.paymentMethod && tx.slipThumbnail))
+      ? "📲 เงินโอน (Bank Transfer)"
+      : "💵 เงินสด (Cash)";
+
     let message = `🚀 --- SlipPro Sale Order (Resend) ---\n`;
+    message += `🏪 Shop: ${shopProfile.name}\n`;
     message += `📅 Date/Time: ${tx.timestamp}\n`;
+    message += `💳 Payment: ${paymentText}\n`;
     message += `-------------------------\n`;
     
     tx.items.forEach(c => {
@@ -755,10 +841,24 @@ export default function App() {
       });
     }
 
-    const lineShareUrl = (shopProfile as any).lineId 
-      ? `https://line.me/R/oaMessage/${(shopProfile as any).lineId}/?${encodeURIComponent(message)}`
-      : `https://line.me/R/share?text=${encodeURIComponent(message)}`;
-    window.open(lineShareUrl, "_blank");
+    const lineShareUrl = `https://line.me/R/share?text=${encodeURIComponent(message)}`;
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(message).catch(() => {});
+    }
+
+    try {
+      window.open(lineShareUrl, "_blank");
+    } catch (e) {}
+
+    setLineOrderModal({
+      isOpen: true,
+      message,
+      shareUrl: lineShareUrl,
+      paymentMethod: tx.paymentMethod || (tx.slipThumbnail ? "เงินโอน" : "เงินสด"),
+      total: tx.total,
+      hasSlip: !!tx.slipThumbnail
+    });
   };
 
   // Phase 2 Manager Verification & Config Helpers
@@ -779,7 +879,8 @@ export default function App() {
     if (!editingItem) return;
 
     const { id, nameEN, nameTH, price, trackStock, currentStock, lowStockThreshold, image } = editingItem;
-    if (!nameEN || !nameTH || price === undefined || price === "" || Number(price) < 0 || !image) {
+    const finalPrice = (price === undefined || price === "" || isNaN(Number(price))) ? 10 : Number(price);
+    if (!nameEN || !nameTH || finalPrice < 0 || !image) {
       triggerToast("Please fill all required fields correctly.");
       return;
     }
@@ -793,7 +894,7 @@ export default function App() {
               ...item, 
               nameEN, 
               nameTH, 
-              price: Number(price), 
+              price: finalPrice, 
               trackStock: !!trackStock, 
               currentStock: trackStock ? Number(currentStock ?? 0) : 99, 
               lowStockThreshold: trackStock ? Number(lowStockThreshold ?? 0) : 0, 
@@ -808,7 +909,7 @@ export default function App() {
         id: "item_" + Date.now(),
         nameEN,
         nameTH,
-        price: Number(price),
+        price: finalPrice,
         trackStock: !!trackStock,
         currentStock: trackStock ? Number(currentStock ?? 0) : 99,
         lowStockThreshold: trackStock ? Number(lowStockThreshold ?? 0) : 0,
@@ -1547,6 +1648,88 @@ export default function App() {
                     </div>
                   )}
                 </section>
+
+                {/* Payment Method Selector Section */}
+                <section id="payment-method-section" className={`bg-white p-5 space-y-3.5 border-t border-slate-100 transition-all ${paymentMethodError ? 'ring-2 ring-red-500 rounded-2xl bg-red-50/20' : ''}`}>
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-xs font-bold uppercase text-slate-900 flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-slate-900" />
+                      <span>{t.paymentMethodSection}</span>
+                    </h2>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200">
+                      * {lang === "en" ? "Required" : "จำเป็นต้องเลือก"}
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] text-slate-500 font-medium">
+                    {t.paymentMethodPrompt}
+                  </p>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Cash Option Button */}
+                    <button
+                      type="button"
+                      id="payment-method-cash"
+                      onClick={() => {
+                        setPaymentMethod("เงินสด");
+                        setPaymentMethodError(false);
+                      }}
+                      className={`p-4 rounded-2xl border-2 flex flex-col items-center justify-center gap-2 transition-all cursor-pointer ${
+                        paymentMethod === "เงินสด"
+                          ? "border-emerald-600 bg-emerald-50 text-emerald-950 shadow-md shadow-emerald-600/10 scale-[1.02]"
+                          : "border-slate-200 hover:border-slate-300 bg-slate-50/70 text-slate-700 hover:bg-slate-50 active:scale-98"
+                      }`}
+                    >
+                      <span className="text-3xl">💵</span>
+                      <div className="text-center">
+                        <span className="block text-sm font-black tracking-tight">เงินสด</span>
+                        <span className="block text-[10px] font-bold text-slate-500 uppercase mt-0.5">Cash</span>
+                      </div>
+                      {paymentMethod === "เงินสด" ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-white px-2 py-0.5 rounded-full border border-emerald-200">
+                          <Check className="w-3 h-3 stroke-[3]" /> {lang === "en" ? "Selected" : "เลือกแล้ว"}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-slate-400 font-medium">{lang === "en" ? "Tap to choose" : "แตะเพื่อเลือก"}</span>
+                      )}
+                    </button>
+
+                    {/* Transfer Option Button */}
+                    <button
+                      type="button"
+                      id="payment-method-transfer"
+                      onClick={() => {
+                        setPaymentMethod("เงินโอน");
+                        setPaymentMethodError(false);
+                      }}
+                      className={`p-4 rounded-2xl border-2 flex flex-col items-center justify-center gap-2 transition-all cursor-pointer ${
+                        paymentMethod === "เงินโอน"
+                          ? "border-blue-600 bg-blue-50 text-blue-950 shadow-md shadow-blue-600/10 scale-[1.02]"
+                          : "border-slate-200 hover:border-slate-300 bg-slate-50/70 text-slate-700 hover:bg-slate-50 active:scale-98"
+                      }`}
+                    >
+                      <span className="text-3xl">📲</span>
+                      <div className="text-center">
+                        <span className="block text-sm font-black tracking-tight">เงินโอน</span>
+                        <span className="block text-[10px] font-bold text-slate-500 uppercase mt-0.5">Transfer</span>
+                      </div>
+                      {paymentMethod === "เงินโอน" ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 bg-white px-2 py-0.5 rounded-full border border-blue-200">
+                          <Check className="w-3 h-3 stroke-[3]" /> {lang === "en" ? "Selected" : "เลือกแล้ว"}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-slate-400 font-medium">{lang === "en" ? "Tap to choose" : "แตะเพื่อเลือก"}</span>
+                      )}
+                    </button>
+                  </div>
+
+                  {paymentMethodError && (
+                    <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 flex items-center gap-2 text-red-600 text-xs font-bold">
+                      <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                      <span>{t.paymentMethodRequired}</span>
+                    </div>
+                  )}
+                </section>
               </div>
             </div>
           )}
@@ -1574,85 +1757,111 @@ export default function App() {
                       <p className="text-sm text-slate-400 italic font-medium">{t.noTransactions}</p>
                     </div>
                   ) : (
-                    transactions.map((tx, idx) => (
-                      <div id={`tx-${tx.id}`} key={tx.id || idx} className="p-5 space-y-3.5 hover:bg-slate-50/50 transition-colors">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-mono text-slate-500 flex items-center gap-1.5 font-semibold">
-                            <Clock className="w-3.5 h-3.5" />
-                            {tx.timestamp}
-                          </span>
-                          <span className="text-sm font-mono font-black text-slate-900 bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-lg border border-emerald-100">
-                            {t.thb}{tx.total}
-                          </span>
-                        </div>
-
-                        {/* List items sold */}
-                        <div className="space-y-2 pl-3 border-l-2 border-slate-100">
-                          {tx.items.map((it, i) => (
-                            <p key={i} className="text-xs text-slate-600 font-medium flex justify-between items-center">
-                              <span className="flex items-center gap-1.5">
-                                <span className="w-1 h-1 rounded-full bg-slate-300 block"></span>
-                                {lang === "en" ? it.nameEN : it.nameTH} 
-                                <span className="font-bold text-slate-900 text-[10px] bg-slate-100 px-1.5 rounded">x{it.quantity}</span>
+                    transactions.map((tx, idx) => {
+                      const isTransfer = tx.paymentMethod === "เงินโอน" || (!tx.paymentMethod && !!tx.slipThumbnail);
+                      return (
+                        <div id={`tx-${tx.id}`} key={tx.id || idx} className="p-5 space-y-3.5 hover:bg-slate-50/50 transition-colors">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-[11px] font-mono text-slate-500 flex items-center gap-1.5 font-semibold">
+                                <Clock className="w-3.5 h-3.5" />
+                                {tx.timestamp}
                               </span>
-                              <span className="font-mono text-slate-400 text-[11px]">{t.thb}{it.price * it.quantity}</span>
-                            </p>
-                          ))}
-                        </div>
-
-                        {/* Slip status */}
-                        <div className="flex items-center justify-between pt-3 border-t border-slate-50 text-[10px]">
-                          <span className="text-slate-500 flex items-center gap-1.5">
-                            {tx.slipThumbnail ? (
-                              <>
-                                <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]"></span>
-                                <span className="text-slate-700 font-bold uppercase tracking-wider">{t.slipAttached}</span>
-                              </>
-                            ) : (
-                              <>
-                                <span className="inline-block w-2 h-2 rounded-full bg-slate-300"></span>
-                                <span className="text-slate-400 font-semibold uppercase tracking-wider">{t.slipNotAttached}</span>
-                              </>
-                            )}
-                          </span>
-
-                          {tx.lowStockAlerts.length > 0 && (
-                            <span className="text-red-600 font-black tracking-wider text-[9px] px-2 py-1 bg-red-50 border border-red-200 rounded-md uppercase">
-                              {t.lowStockAlertText}
+                              {/* Payment Method Badge */}
+                              <span className={`inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full border ${
+                                isTransfer
+                                  ? "bg-blue-50 text-blue-700 border-blue-200"
+                                  : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              }`}>
+                                {isTransfer ? "📲 เงินโอน (Transfer)" : "💵 เงินสด (Cash)"}
+                              </span>
+                            </div>
+                            <span className="text-sm font-mono font-black text-slate-900 bg-slate-100 text-slate-900 px-2.5 py-1 rounded-lg border border-slate-200">
+                              {t.thb}{tx.total}
                             </span>
+                          </div>
+
+                          {/* List items sold */}
+                          <div className="space-y-2 pl-3 border-l-2 border-slate-100">
+                            {tx.items.map((it, i) => (
+                              <p key={i} className="text-xs text-slate-600 font-medium flex justify-between items-center">
+                                <span className="flex items-center gap-1.5">
+                                  <span className="w-1 h-1 rounded-full bg-slate-300 block"></span>
+                                  {lang === "en" ? it.nameEN : it.nameTH} 
+                                  <span className="font-bold text-slate-900 text-[10px] bg-slate-100 px-1.5 rounded">x{it.quantity}</span>
+                                </span>
+                                <span className="font-mono text-slate-400 text-[11px]">{t.thb}{it.price * it.quantity}</span>
+                              </p>
+                            ))}
+                          </div>
+
+                          {/* Slip status & actions */}
+                          <div className="flex items-center justify-between pt-3 border-t border-slate-50 text-[10px]">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-slate-500 flex items-center gap-1.5">
+                                {tx.slipThumbnail ? (
+                                  <>
+                                    <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]"></span>
+                                    <span className="text-slate-700 font-bold uppercase tracking-wider">{t.slipAttached}</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="inline-block w-2 h-2 rounded-full bg-slate-300"></span>
+                                    <span className="text-slate-400 font-semibold uppercase tracking-wider">{t.slipNotAttached}</span>
+                                  </>
+                                )}
+                              </span>
+
+                              {tx.lowStockAlerts && tx.lowStockAlerts.length > 0 && (
+                                <span className="text-red-600 font-black tracking-wider text-[9px] px-2 py-0.5 bg-red-50 border border-red-200 rounded-md uppercase">
+                                  {t.lowStockAlertText}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Quick Send to LINE Button */}
+                            <button
+                              type="button"
+                              id={`resend-line-${tx.id}`}
+                              onClick={() => handleResendToLine(tx)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#06C755]/10 hover:bg-[#06C755]/20 text-[#06C755] font-black text-[10px] cursor-pointer transition-colors"
+                            >
+                              <ExternalLink className="w-3 h-3 stroke-[2.5]" />
+                              <span>{t.resendToLine}</span>
+                            </button>
+                          </div>
+
+                          {/* Slip Thumbnail in history */}
+                          {tx.slipThumbnail && (
+                            <div className="pt-2">
+                              <details className="cursor-pointer group bg-slate-50 rounded-xl p-2.5 border border-slate-200/60 hover:border-slate-300 transition-colors">
+                                <summary className="text-[10px] text-slate-600 hover:text-slate-900 flex items-center gap-1.5 select-none font-bold uppercase tracking-wider">
+                                  <ImageIcon className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600" />
+                                  <span>View Captured Slip</span>
+                                </summary>
+                                <div 
+                                  className="mt-3 rounded-xl overflow-hidden bg-white max-w-[240px] shadow-sm border border-slate-200 cursor-zoom-in group/history-img relative"
+                                  onClick={() => setFullScreenImage(tx.slipThumbnail)}
+                                >
+                                  <img
+                                    src={tx.slipThumbnail}
+                                    alt="Captured receipt attachment"
+                                    className="w-full object-contain aspect-square group-hover/history-img:scale-[1.02] transition-transform"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                  <div className="absolute inset-0 bg-black/0 group-hover/history-img:bg-black/20 transition-colors flex items-center justify-center">
+                                    <span className="text-white text-xs font-bold bg-black/60 px-2 py-1 rounded-lg opacity-0 group-hover/history-img:opacity-100 transition-opacity flex items-center gap-1">
+                                      <ImageIcon className="w-3 h-3" />
+                                      <span>View</span>
+                                    </span>
+                                  </div>
+                                </div>
+                              </details>
+                            </div>
                           )}
                         </div>
-
-                        {/* Slip Thumbnail in history */}
-                        {tx.slipThumbnail && (
-                          <div className="pt-2">
-                            <details className="cursor-pointer group bg-slate-50 rounded-xl p-2.5 border border-slate-200/60 hover:border-slate-300 transition-colors">
-                              <summary className="text-[10px] text-slate-600 hover:text-slate-900 flex items-center gap-1.5 select-none font-bold uppercase tracking-wider">
-                                <ImageIcon className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600" />
-                                <span>View Captured Slip</span>
-                              </summary>
-                              <div 
-                                className="mt-3 rounded-xl overflow-hidden bg-white max-w-[240px] shadow-sm border border-slate-200 cursor-zoom-in group/history-img relative"
-                                onClick={() => setFullScreenImage(tx.slipThumbnail)}
-                              >
-                                <img
-                                  src={tx.slipThumbnail}
-                                  alt="Captured receipt attachment"
-                                  className="w-full object-contain aspect-square group-hover/history-img:scale-[1.02] transition-transform"
-                                  referrerPolicy="no-referrer"
-                                />
-                                <div className="absolute inset-0 bg-black/0 group-hover/history-img:bg-black/20 transition-colors flex items-center justify-center">
-                                  <span className="text-white text-xs font-bold bg-black/60 px-2 py-1 rounded-lg opacity-0 group-hover/history-img:opacity-100 transition-opacity flex items-center gap-1">
-                                    <ImageIcon className="w-3 h-3" />
-                                    <span>View</span>
-                                  </span>
-                                </div>
-                              </div>
-                            </details>
-                          </div>
-                        )}
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
             </div>
@@ -1898,11 +2107,16 @@ export default function App() {
                 <CheckCircle2 className="w-6 h-6 stroke-[2.5]" />
               </div>
 
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <h3 className="text-base font-black tracking-tight text-slate-950">{t.confirmHeader}</h3>
                 <p className="text-xs text-slate-500 leading-relaxed font-medium">
                   {t.confirmBody.replace("{total}", cartTotal.toString())}
                 </p>
+                {paymentMethod && (
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-800 border border-slate-200">
+                    <span>{paymentMethod === "เงินโอน" ? "📲 เงินโอน (Transfer)" : "💵 เงินสด (Cash)"}</span>
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-2.5 pt-2">
@@ -1919,6 +2133,105 @@ export default function App() {
                   className="flex-1 py-3 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 font-bold text-xs cursor-pointer transition-all"
                 >
                   {t.cancelBtn}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* LINE Order Prepared & Sharing Modal */}
+      <AnimatePresence>
+        {lineOrderModal?.isOpen && (
+          <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white border border-slate-200 rounded-[2rem] p-6 max-w-sm w-full space-y-4 shadow-2xl text-center"
+            >
+              <div className="mx-auto w-14 h-14 rounded-full bg-[#06C755]/10 text-[#06C755] flex items-center justify-center">
+                <CheckCircle2 className="w-8 h-8 stroke-[2.5]" />
+              </div>
+
+              <div className="space-y-1">
+                <h3 className="text-base font-black tracking-tight text-slate-950">
+                  {t.lineSharePrepared}
+                </h3>
+                <p className="text-xs text-slate-500 leading-relaxed font-medium">
+                  {t.lineShareInstructions}
+                </p>
+              </div>
+
+              {/* Order quick summary box */}
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 text-left space-y-1.5 text-xs">
+                <div className="flex justify-between items-center font-mono">
+                  <span className="text-slate-500">{t.totalAmount}:</span>
+                  <span className="font-black text-slate-900 text-sm">฿{lineOrderModal.total}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">{t.paymentMethodSection}:</span>
+                  <span className={`font-bold text-[11px] px-2 py-0.5 rounded ${
+                    lineOrderModal.paymentMethod === "เงินโอน"
+                      ? "bg-blue-100 text-blue-800"
+                      : "bg-emerald-100 text-emerald-800"
+                  }`}>
+                    {lineOrderModal.paymentMethod === "เงินโอน" ? "📲 เงินโอน (Transfer)" : "💵 เงินสด (Cash)"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Direct Open LINE button */}
+              <div className="space-y-2 pt-1">
+                <a
+                  id="open-line-app-link"
+                  href={lineOrderModal.shareUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full py-3.5 px-4 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white font-black text-xs flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-[#06C755]/20 transition-all active:scale-98"
+                >
+                  <ExternalLink className="w-4 h-4 stroke-[2.5]" />
+                  <span>{t.openLineApp}</span>
+                </a>
+
+                {/* Copy order text button */}
+                <button
+                  type="button"
+                  id="copy-order-text-btn"
+                  onClick={() => {
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                      navigator.clipboard.writeText(lineOrderModal.message).then(() => {
+                        setCopySuccess(true);
+                        setTimeout(() => setCopySuccess(false), 2000);
+                      });
+                    }
+                  }}
+                  className="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-98"
+                >
+                  {copySuccess ? (
+                    <>
+                      <Check className="w-4 h-4 text-emerald-600 stroke-[3]" />
+                      <span className="text-emerald-700">{t.copiedSuccess}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4 text-slate-500" />
+                      <span>{t.copyOrderText}</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Close / New sale */}
+                <button
+                  type="button"
+                  id="line-modal-close-btn"
+                  onClick={() => {
+                    setLineOrderModal(null);
+                    setActiveTab("register");
+                  }}
+                  className="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-black text-xs cursor-pointer transition-all mt-1"
+                >
+                  {t.newSaleBtn}
                 </button>
               </div>
             </motion.div>
@@ -2323,7 +2636,7 @@ export default function App() {
                           <span className="text-[10px] uppercase font-bold text-slate-400">{t.currentCatalog}</span>
                           <button
                             type="button"
-                            onClick={() => setEditingItem({ trackStock: false, currentStock: 99, lowStockThreshold: 0, image: "☕" })}
+                            onClick={() => setEditingItem({ price: 10, trackStock: false, currentStock: 99, lowStockThreshold: 0, image: "☕" })}
                             className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-bold rounded-lg flex items-center gap-1 cursor-pointer transition-all active:scale-95"
                           >
                             <Plus className="w-3.5 h-3.5" />
