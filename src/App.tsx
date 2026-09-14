@@ -30,12 +30,15 @@ import {
   BarChart3,
   ChevronLeft,
   Copy,
-  ExternalLink
+  ExternalLink,
+  Wifi,
+  Layers
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import QRCode from "qrcode";
 import { Html5Qrcode } from "html5-qrcode";
 import html2pdf from "html2pdf.js";
+import { APP_VERSION, CACHE_VERSION, BUILD_TIME } from "./version";
 
 // Types
 interface MenuItem {
@@ -284,7 +287,27 @@ const TRANSLATIONS = {
     downloadBtn: "Download",
     closeBtn: "Close",
     currentCatalog: "Current Catalog",
-    addItemBtn: "Add Item"
+    addItemBtn: "Add Item",
+    appVersion: "Version",
+    checkForUpdates: "Check for Updates",
+    checkingUpdates: "Checking for updates...",
+    latestVersionToast: "SlipPro is up to date (v{version})",
+    newVersionFound: "New version available: v{version}!",
+    updateNowBtn: "Update Now",
+    updateNowInstruction: "A new version is ready. Tap to install immediately.",
+    updatingAppToast: "Updating SlipPro & reloading...",
+    clearCacheBtn: "Purge Cache & Hard Refresh",
+    cacheClearedToast: "Cache purged! Reloading app...",
+    subTabSystem: "System & Version",
+    systemInfoTitle: "System & App Updates",
+    currentVersionLabel: "Current Version",
+    cacheLayerLabel: "Service Worker Cache",
+    buildTimeLabel: "Build Timestamp",
+    connectionStatusLabel: "Network Status",
+    onlineStatus: "Online (Ready to sync)",
+    offlineStatus: "Offline (Local PWA mode)",
+    systemUpToDate: "Your application is currently running the latest release.",
+    dismissBtn: "Later"
   },
   th: {
     appTitle: "SlipPro",
@@ -405,7 +428,27 @@ const TRANSLATIONS = {
     downloadBtn: "ดาวน์โหลด",
     closeBtn: "ปิด",
     currentCatalog: "รายการเมนูปัจจุบัน",
-    addItemBtn: "เพิ่มเมนู"
+    addItemBtn: "เพิ่มเมนู",
+    appVersion: "เวอร์ชัน",
+    checkForUpdates: "ตรวจสอบการอัปเดต",
+    checkingUpdates: "กำลังตรวจสอบการอัปเดต...",
+    latestVersionToast: "SlipPro เป็นเวอร์ชันล่าสุดแล้ว (v{version})",
+    newVersionFound: "พบเวอร์ชันใหม่: v{version}!",
+    updateNowBtn: "อัปเดตทันที",
+    updateNowInstruction: "มีเวอร์ชันใหม่พร้อมติดตั้ง แตะเพื่ออัปเดตทันที",
+    updatingAppToast: "กำลังอัปเดต SlipPro และโหลดใหม่...",
+    clearCacheBtn: "ล้างแคชและโหลดใหม่",
+    cacheClearedToast: "ล้างแคชเรียบร้อย! กำลังโหลดใหม่...",
+    subTabSystem: "ระบบและเวอร์ชัน",
+    systemInfoTitle: "ระบบและการอัปเดต",
+    currentVersionLabel: "เวอร์ชันปัจจุบัน",
+    cacheLayerLabel: "แคช Service Worker",
+    buildTimeLabel: "เวลาที่คอมไพล์",
+    connectionStatusLabel: "สถานะเครือข่าย",
+    onlineStatus: "ออนไลน์ (พร้อมซิงค์)",
+    offlineStatus: "ออฟไลน์ (ใช้งานโหมด PWA)",
+    systemUpToDate: "คุณกำลังใช้งาน SlipPro เวอร์ชันล่าสุดเรียบร้อยแล้ว",
+    dismissBtn: "ไว้คราวหลัง"
   }
 };
 
@@ -437,8 +480,18 @@ export default function App() {
   const [pinInput, setPinInput] = useState("");
   const [pinError, setPinError] = useState<string | null>(null);
   const [showManagerModal, setShowManagerModal] = useState(false);
-  const [managerSubTab, setManagerSubTab] = useState<"profile" | "items" | "sync">("profile");
+  const [managerSubTab, setManagerSubTab] = useState<"profile" | "items" | "sync" | "system">("profile");
   
+  // App Version & Update State
+  const [updateInfo, setUpdateInfo] = useState<{
+    available: boolean;
+    latestVersion: string;
+    releaseNotes?: string;
+  }>({ available: false, latestVersion: APP_VERSION });
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [updateBannerDismissed, setUpdateBannerDismissed] = useState(false);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
   const [shopProfile, setShopProfile] = useState({
     name: "SlipPro Coffee",
     address: "123 Sukhumvit Rd, Bangkok",
@@ -528,6 +581,150 @@ export default function App() {
       setShowToast(null);
     }, 3000);
   };
+
+  // Version & Update System
+  const checkForUpdates = async (manual = false) => {
+    if (manual) setIsCheckingUpdate(true);
+    try {
+      // 1. Tell Service Worker to check server for new sw.js
+      if ('serviceWorker' in navigator) {
+        const reg = (window as any).__swRegistration || await navigator.serviceWorker.getRegistration();
+        if (reg) {
+          await reg.update().catch(() => {});
+        }
+      }
+
+      // 2. Fetch version.json bypassing browser & HTTP cache
+      const res = await fetch(`${import.meta.env.BASE_URL}version.json?_t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        }
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.version && data.version !== APP_VERSION) {
+          setUpdateInfo({
+            available: true,
+            latestVersion: data.version,
+            releaseNotes: data.releaseNotes
+          });
+          setUpdateBannerDismissed(false);
+          if (manual) {
+            triggerToast(t.newVersionFound.replace("{version}", data.version));
+          }
+          return;
+        }
+      }
+
+      if (manual) {
+        triggerToast(t.latestVersionToast.replace("{version}", APP_VERSION));
+      }
+    } catch (err) {
+      console.error("Update check failed:", err);
+      if (manual) {
+        triggerToast("Failed to check for updates. Check connection.");
+      }
+    } finally {
+      if (manual) {
+        setTimeout(() => setIsCheckingUpdate(false), 600);
+      }
+    }
+  };
+
+  // Apply update, purge caches and reload
+  const handleApplyUpdate = async () => {
+    triggerToast(t.updatingAppToast);
+    try {
+      if ('caches' in window) {
+        const cacheNames = await caches.keys();
+        await Promise.all(cacheNames.map(name => caches.delete(name)));
+      }
+
+      if ('serviceWorker' in navigator) {
+        const reg = (window as any).__swRegistration || await navigator.serviceWorker.getRegistration();
+        if (reg && reg.waiting) {
+          reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+        }
+        if (reg && reg.active) {
+          reg.active.postMessage({ type: 'CLEAR_CACHES' });
+        }
+      }
+    } catch (e) {
+      console.error("Error clearing caches during update:", e);
+    }
+
+    setTimeout(() => {
+      window.location.reload();
+    }, 500);
+  };
+
+  // Force purge caches & hard reload
+  const handlePurgeCache = async () => {
+    triggerToast(t.cacheClearedToast);
+    try {
+      if ('caches' in window) {
+        const cacheNames = await caches.keys();
+        await Promise.all(cacheNames.map(name => caches.delete(name)));
+      }
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (const reg of registrations) {
+          await reg.unregister();
+        }
+      }
+    } catch (e) {
+      console.error("Cache purge failed:", e);
+    }
+    setTimeout(() => {
+      window.location.reload();
+    }, 500);
+  };
+
+  // Automatic Background Update Checks
+  useEffect(() => {
+    // Initial check
+    checkForUpdates(false);
+
+    // Online / offline listeners
+    const handleOnline = () => {
+      setIsOnline(true);
+      checkForUpdates(false);
+    };
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    // Check periodically every 4 minutes
+    const interval = setInterval(() => {
+      checkForUpdates(false);
+    }, 4 * 60 * 1000);
+
+    // Check when user returns to window
+    const handleFocus = () => checkForUpdates(false);
+    window.addEventListener('focus', handleFocus);
+
+    // Listen to custom event dispatched by main.tsx
+    const handleSWUpdate = () => {
+      setUpdateInfo(prev => ({
+        ...prev,
+        available: true,
+        releaseNotes: "A new version of SlipPro is ready to install."
+      }));
+      setUpdateBannerDismissed(false);
+    };
+    window.addEventListener('slippro-update-available', handleSWUpdate);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      clearInterval(interval);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('slippro-update-available', handleSWUpdate);
+    };
+  }, []);
 
   // Add item to cart
   const handleAddToCart = (item: MenuItem) => {
@@ -1254,9 +1451,19 @@ export default function App() {
             <div>
               <h1 id="app-title" className="text-2xl font-black tracking-tighter text-slate-900 flex items-center gap-1.5 leading-none">
                 {t.appTitle}
-                <span className="text-[9px] px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded-full font-mono uppercase tracking-wider font-bold border border-slate-200">
-                  PWA v3
-                </span>
+                <button
+                  type="button"
+                  id="app-version-badge"
+                  onClick={() => checkForUpdates(true)}
+                  title={`${t.checkForUpdates} (SlipPro v${APP_VERSION})`}
+                  className="text-[9px] px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-full font-mono uppercase tracking-wider font-bold border border-slate-200 flex items-center gap-1 cursor-pointer transition-colors active:scale-95"
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${updateInfo.available ? "bg-amber-500 animate-ping" : "bg-emerald-500"}`}></span>
+                  <span>v{APP_VERSION}</span>
+                  {isCheckingUpdate && (
+                    <RefreshCw className="w-2.5 h-2.5 animate-spin text-slate-500" />
+                  )}
+                </button>
               </h1>
               <p className="text-[10px] text-slate-400 font-sans tracking-wide mt-0.5">
                 {t.subtitle}
@@ -2436,7 +2643,7 @@ export default function App() {
               </div>
 
               {/* Console Tabs */}
-              <div className="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-xl text-[10px] font-bold uppercase tracking-wider">
+              <div className="grid grid-cols-4 gap-1 bg-slate-100 p-1 rounded-xl text-[9px] font-bold uppercase tracking-wider">
                 <button
                   onClick={() => setManagerSubTab("profile")}
                   className={`py-2 rounded-lg transition-all ${
@@ -2460,6 +2667,17 @@ export default function App() {
                   }`}
                 >
                   {t.subTabSync}
+                </button>
+                <button
+                  onClick={() => setManagerSubTab("system")}
+                  className={`py-2 rounded-lg transition-all relative flex items-center justify-center gap-1 ${
+                    managerSubTab === "system" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  <span>{t.subTabSystem}</span>
+                  {updateInfo.available && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span>
+                  )}
                 </button>
               </div>
 
@@ -2767,6 +2985,123 @@ export default function App() {
                     )}
                   </div>
                 )}
+
+                {/* System & Version Updates Sub-tab */}
+                {managerSubTab === "system" && (
+                  <div className="space-y-4 pt-1">
+                    {/* Status & Update Alert Box */}
+                    {updateInfo.available ? (
+                      <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-950 space-y-3">
+                        <div className="flex items-start gap-3">
+                          <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm">
+                            <Sparkles className="w-5 h-5 animate-pulse" />
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-black uppercase tracking-wider text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                              Update Ready
+                            </span>
+                            <h4 className="text-sm font-black text-slate-900 mt-1">
+                              {t.newVersionFound.replace("{version}", updateInfo.latestVersion)}
+                            </h4>
+                            <p className="text-xs text-amber-800 mt-1">
+                              {updateInfo.releaseNotes || t.updateNowInstruction}
+                            </p>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          id="manager-update-now-btn"
+                          onClick={handleApplyUpdate}
+                          className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-xl shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95"
+                        >
+                          <RefreshCw className="w-4 h-4" />
+                          <span>{t.updateNowBtn}</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-950 flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-sm">
+                          <CheckCircle2 className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-black text-emerald-950">
+                            {t.latestVersionToast.replace("{version}", APP_VERSION)}
+                          </h4>
+                          <p className="text-[11px] text-emerald-700 mt-0.5">
+                            {t.systemUpToDate}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Check Updates Button */}
+                    <button
+                      type="button"
+                      id="check-updates-btn"
+                      onClick={() => checkForUpdates(true)}
+                      disabled={isCheckingUpdate}
+                      className="w-full py-2.5 px-4 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95 shadow-md"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isCheckingUpdate ? "animate-spin" : ""}`} />
+                      <span>{isCheckingUpdate ? t.checkingUpdates : t.checkForUpdates}</span>
+                    </button>
+
+                    {/* Diagnostics & Specs Grid */}
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-2.5">
+                      <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                        {t.systemInfoTitle}
+                      </h4>
+
+                      <div className="space-y-2 text-xs divide-y divide-slate-200/60">
+                        <div className="flex justify-between items-center pt-1">
+                          <span className="text-slate-500 font-medium">{t.currentVersionLabel}</span>
+                          <span className="font-mono font-black text-slate-900 px-2 py-0.5 bg-slate-200/80 rounded-md">
+                            v{APP_VERSION}
+                          </span>
+                        </div>
+
+                        <div className="flex justify-between items-center pt-2">
+                          <span className="text-slate-500 font-medium">{t.cacheLayerLabel}</span>
+                          <span className="font-mono text-[11px] font-bold text-slate-700">
+                            {CACHE_VERSION}
+                          </span>
+                        </div>
+
+                        <div className="flex justify-between items-center pt-2">
+                          <span className="text-slate-500 font-medium">{t.connectionStatusLabel}</span>
+                          <span className={`text-[11px] font-bold flex items-center gap-1.5 ${isOnline ? "text-emerald-600" : "text-amber-600"}`}>
+                            <span className={`w-2 h-2 rounded-full ${isOnline ? "bg-emerald-500" : "bg-amber-500"}`}></span>
+                            {isOnline ? t.onlineStatus : t.offlineStatus}
+                          </span>
+                        </div>
+
+                        <div className="flex justify-between items-center pt-2">
+                          <span className="text-slate-500 font-medium">{t.buildTimeLabel}</span>
+                          <span className="font-mono text-[10px] text-slate-500">
+                            {BUILD_TIME}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Force Purge Cache */}
+                    <div className="pt-2 border-t border-slate-100">
+                      <button
+                        type="button"
+                        id="purge-cache-btn"
+                        onClick={handlePurgeCache}
+                        className="w-full py-2.5 px-4 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>{t.clearCacheBtn}</span>
+                      </button>
+                      <p className="text-[10px] text-slate-400 text-center mt-1.5 font-medium">
+                        Safe reload: does not delete shop inventory or transactions.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             </motion.div>
           </div>
@@ -2797,6 +3132,59 @@ export default function App() {
               />
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* Floating In-App Update Prompt Banner */}
+      <AnimatePresence>
+        {updateInfo.available && !updateBannerDismissed && (
+          <motion.div
+            id="update-banner"
+            initial={{ opacity: 0, y: 40, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 30, scale: 0.96 }}
+            className="fixed bottom-20 left-4 right-4 max-w-md mx-auto z-40 bg-slate-950/95 text-white p-3.5 rounded-2xl shadow-2xl border border-slate-800/80 backdrop-blur-md flex items-center justify-between gap-3"
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/30">
+                <Sparkles className="w-4 h-4 animate-pulse" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-black text-white">
+                    {t.newVersionFound.replace("{version}", updateInfo.latestVersion)}
+                  </span>
+                  <span className="text-[9px] font-bold px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 rounded border border-emerald-500/30">
+                    Ready
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-400 truncate mt-0.5">
+                  {updateInfo.releaseNotes || t.updateNowInstruction}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                id="floating-update-btn"
+                onClick={handleApplyUpdate}
+                className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-[11px] rounded-xl cursor-pointer transition-all active:scale-95 shadow-md shadow-emerald-500/20 flex items-center gap-1"
+              >
+                <RefreshCw className="w-3 h-3" />
+                <span>{t.updateNowBtn}</span>
+              </button>
+              <button
+                type="button"
+                id="dismiss-update-btn"
+                onClick={() => setUpdateBannerDismissed(true)}
+                title={t.dismissBtn}
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg cursor-pointer transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
 
