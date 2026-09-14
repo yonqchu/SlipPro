@@ -14,6 +14,8 @@ export interface GeneratePdfParams {
   cashCount: number;
   transferTotal: number;
   transferCount: number;
+  onlineTotal: number;
+  onlineCount: number;
   totalEarnings: number;
   totalOrders: number;
   totalRestockedUnits: number;
@@ -31,7 +33,7 @@ export const generateDailyPdfReport = async (params: GeneratePdfParams): Promise
   const isTh = params.lang === "th";
 
   // Render Cake chart SVG
-  const cakeSvg = renderCakeChartSVG(params.cakeSlices, params.totalSoldUnits, 180);
+  const cakeSvg = renderCakeChartSVG(params.cakeSlices, params.totalSoldUnits, 180, params.lang);
 
   // Build stock balance rows HTML
   const stockRowsHtml = params.stockRows.map((r) => `
@@ -61,18 +63,37 @@ export const generateDailyPdfReport = async (params: GeneratePdfParams): Promise
   const timelineHtml = params.timelineEvents.length > 0 ? params.timelineEvents.map((ev, idx) => {
     if (ev.type === "sale") {
       const isCash = ev.paymentMethod === "เงินสด";
-      const paymentBadge = isTh
-        ? (isCash ? "💵 เงินสด" : "📲 เงินโอน")
-        : (isCash ? "Cash" : "Transfer");
-      const badgeBg = isCash ? "#ecfdf5" : "#eff6ff";
-      const badgeColor = isCash ? "#065f46" : "#1e40af";
+      const isTransfer = ev.paymentMethod === "เงินโอน";
+      const isOnline = ev.paymentMethod === "ออนไลน์";
+      
+      let paymentBadge = "";
+      let badgeBg = "";
+      let badgeColor = "";
+      let borderColor = "";
+
+      if (isCash) {
+        paymentBadge = isTh ? "💵 เงินสด" : "Cash";
+        badgeBg = "#ecfdf5";
+        badgeColor = "#065f46";
+        borderColor = "#10b981";
+      } else if (isTransfer) {
+        paymentBadge = isTh ? "📲 เงินโอน" : "Transfer";
+        badgeBg = "#eff6ff";
+        badgeColor = "#1e40af";
+        borderColor = "#3b82f6";
+      } else {
+        paymentBadge = isTh ? "🌐 ออนไลน์" : "Online";
+        badgeBg = "#f5f3ff";
+        badgeColor = "#5b21b6";
+        borderColor = "#8b5cf6";
+      }
 
       const itemsDesc = ev.items
         .map((it) => `${isTh ? it.nameTH : it.nameEN} x${it.quantity} (฿${it.price * it.quantity})`)
         .join(", ");
 
       return `
-        <div style="padding: 8px 10px; margin-bottom: 6px; background-color: #f8fafc; border-left: 3px solid ${isCash ? '#10b981' : '#3b82f6'}; border-radius: 6px; font-size: 11px;">
+        <div style="padding: 8px 10px; margin-bottom: 6px; background-color: #f8fafc; border-left: 3px solid ${borderColor}; border-radius: 6px; font-size: 11px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
             <div style="display: flex; align-items: center; gap: 6px;">
               <span style="font-family: monospace; font-weight: 700; color: #64748b; font-size: 10px;">⏰ ${ev.time}</span>
@@ -157,7 +178,7 @@ export const generateDailyPdfReport = async (params: GeneratePdfParams): Promise
       <!-- Financial KPI Breakdown Cards -->
       <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
         <!-- Cash Card -->
-        <div style="width: 32%; box-sizing: border-box; border: 1px solid #d1fae5; background-color: #f0fdf4; padding: 12px; border-radius: 10px; text-align: center;">
+        <div style="width: 24%; box-sizing: border-box; border: 1px solid #d1fae5; background-color: #f0fdf4; padding: 12px; border-radius: 10px; text-align: center;">
           <span style="font-size: 10px; font-weight: 800; text-transform: uppercase; color: #065f46;">
             ${isTh ? "💵 เงินสด" : "💵 Cash Payments"}
           </span>
@@ -166,7 +187,7 @@ export const generateDailyPdfReport = async (params: GeneratePdfParams): Promise
         </div>
 
         <!-- Transfer Card -->
-        <div style="width: 32%; box-sizing: border-box; border: 1px solid #dbeafe; background-color: #eff6ff; padding: 12px; border-radius: 10px; text-align: center;">
+        <div style="width: 24%; box-sizing: border-box; border: 1px solid #dbeafe; background-color: #eff6ff; padding: 12px; border-radius: 10px; text-align: center;">
           <span style="font-size: 10px; font-weight: 800; text-transform: uppercase; color: #1e40af;">
             ${isTh ? "📲 เงินโอน" : "📲 Bank Transfers"}
           </span>
@@ -174,8 +195,17 @@ export const generateDailyPdfReport = async (params: GeneratePdfParams): Promise
           <span style="font-size: 9px; color: #1d4ed8; font-weight: 600;">${params.transferCount} ${isTh ? "บิล" : "bills"}</span>
         </div>
 
+        <!-- Online Card -->
+        <div style="width: 24%; box-sizing: border-box; border: 1px solid #ede9fe; background-color: #f5f3ff; padding: 12px; border-radius: 10px; text-align: center;">
+          <span style="font-size: 10px; font-weight: 800; text-transform: uppercase; color: #5b21b6;">
+            ${isTh ? "🌐 ออนไลน์" : "🌐 Online Sales"}
+          </span>
+          <p style="font-size: 20px; font-weight: 900; color: #7c3aed; margin: 4px 0 0 0; font-family: monospace;">฿${params.onlineTotal}</p>
+          <span style="font-size: 9px; color: #6d28d9; font-weight: 600;">${params.onlineCount} ${isTh ? "บิล" : "bills"}</span>
+        </div>
+
         <!-- Total Revenue Card -->
-        <div style="width: 32%; box-sizing: border-box; border: 1px solid #0f172a; background-color: #0f172a; color: #ffffff; padding: 12px; border-radius: 10px; text-align: center;">
+        <div style="width: 24%; box-sizing: border-box; border: 1px solid #0f172a; background-color: #0f172a; color: #ffffff; padding: 12px; border-radius: 10px; text-align: center;">
           <span style="font-size: 10px; font-weight: 800; text-transform: uppercase; color: #cbd5e1;">
             ${isTh ? "💰 ยอดรวมทั้งหมด" : "💰 Total Revenue"}
           </span>

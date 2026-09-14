@@ -22,18 +22,40 @@ export interface DailyOpeningStockMap {
 export const STORAGE_OPENING_STOCK = "slippro_opening_stocks_v2";
 export const STORAGE_RESTOCK_EVENTS = "slippro_restock_events_v2";
 
+export const getTimezone = (): string => {
+  try {
+    return localStorage.getItem("slippro_timezone") || "Asia/Bangkok";
+  } catch (e) {
+    return "Asia/Bangkok";
+  }
+};
+
+export const setTimezone = (tz: string) => {
+  try {
+    localStorage.setItem("slippro_timezone", tz);
+  } catch (e) {}
+};
+
 export const getLocalDateString = (d: Date = new Date()): string => {
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  const tz = getTimezone();
+  const formatter = new Intl.DateTimeFormat('en-CA', { 
+    timeZone: tz, 
+    year: 'numeric', 
+    month: '2-digit', 
+    day: '2-digit' 
+  });
+  return formatter.format(d); // Returns YYYY-MM-DD
 };
 
 export const getLocalTimeString = (d: Date = new Date()): string => {
-  const hours = String(d.getHours()).padStart(2, "0");
-  const minutes = String(d.getMinutes()).padStart(2, "0");
-  const seconds = String(d.getSeconds()).padStart(2, "0");
-  return `${hours}:${minutes}:${seconds}`;
+  const tz = getTimezone();
+  const formatter = new Intl.DateTimeFormat('en-GB', { 
+    timeZone: tz, 
+    hour: '2-digit', 
+    minute: '2-digit', 
+    second: '2-digit' 
+  });
+  return formatter.format(d); // Returns HH:mm:ss
 };
 
 // Ensure opening stock exists for today or given date
@@ -132,7 +154,8 @@ export interface CakeChartSlice {
 export const renderCakeChartSVG = (
   slices: CakeChartSlice[],
   totalUnits: number,
-  size = 200
+  size = 200,
+  lang = "th"
 ): string => {
   const canvas = document.createElement("canvas");
   // Use 2x resolution for crisp PDF output
@@ -160,7 +183,7 @@ export const renderCakeChartSVG = (
     ctx.font = "12px system-ui, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText("No sales", cx, cy + 5);
+    ctx.fillText(lang === "th" ? "ไม่มียอดขาย" : "No sales", cx, cy + 5);
     
     return `<img src="${canvas.toDataURL("image/png")}" style="width: ${size}px; height: ${size}px; display: block; margin: 0 auto; max-width: 100%; height: auto;" />`;
   }
@@ -214,7 +237,7 @@ export const renderCakeChartSVG = (
   ctx.font = "800 9px system-ui";
   // Add simple tracking by spacing out string or rely on canvas text
   // Canvas doesn't easily support letter-spacing natively in all browsers, so we'll just draw it normally
-  ctx.fillText("TOTAL SOLD", cx, cy + 14);
+  ctx.fillText(lang === "th" ? "ยอดขายรวม" : "TOTAL SOLD", cx, cy + 14);
 
   return `<img src="${canvas.toDataURL("image/png")}" style="width: ${size}px; height: ${size}px; display: block; margin: 0 auto; max-width: 100%; height: auto;" />`;
 };

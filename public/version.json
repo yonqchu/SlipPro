@@ -1,6 +1,6 @@
 {
-  "version": "1.5.0",
-  "buildTime": "2026-09-14T11:49:00Z",
-  "cacheName": "slippro-cache-v17",
-  "releaseNotes": "Added support for marking items as spoiled/broken. Reworked shift closing logic to preserve history."
+  "version": "1.7.2",
+  "buildTime": "2026-09-14T20:54:00Z",
+  "cacheName": "slippro-cache-v21",
+  "releaseNotes": "Added date/time stamps to captured photos."
 }

@@ -54,6 +54,8 @@ import {
   addRestockEvent,
   CAKE_PALETTE,
   CakeChartSlice,
+  getTimezone,
+  setTimezone,
 } from "./dailyStock";
 import { QuickRestockModal } from "./components/QuickRestockModal";
 import { CakeChart } from "./components/CakeChart";
@@ -94,7 +96,7 @@ interface Transaction {
   total: number;
   slipThumbnail: string | null;
   lowStockAlerts: string[];
-  paymentMethod?: "เงินสด" | "เงินโอน";
+  paymentMethod?: "เงินสด" | "เงินโอน" | "ออนไลน์";
 }
 
 // Default items
@@ -238,9 +240,10 @@ const TRANSLATIONS = {
     noLimit: "No Limit",
     copiedText: "LINE Share text prepared!",
     paymentMethodSection: "Payment Method",
-    paymentMethodRequired: "Please choose a payment method (Cash or Transfer)!",
+    paymentMethodRequired: "Please choose a payment method (Cash, Transfer, or Online)!",
     cashOption: "Cash",
     transferOption: "Bank Transfer",
+    onlineOption: "Online",
     paymentMethodPrompt: "Select how the customer paid (Required):",
     lineSharePrepared: "LINE Order Ready to Send!",
     lineShareInstructions: "Sale recorded! Tap below to open LINE or copy the order message.",
@@ -252,6 +255,7 @@ const TRANSLATIONS = {
     resendToLine: "Send to LINE",
     cashBreakdown: "Cash Payments",
     transferBreakdown: "Bank Transfers",
+    onlineBreakdown: "Online Sales",
     
     // Navigation Keys
     tabRegister: "Register",
@@ -288,15 +292,15 @@ const TRANSLATIONS = {
     totalCash: "Total Cash",
     totalTransactions: "Total Transactions",
     itemizedSales: "Itemized Sales Count",
-    clearShiftBtn: "Close Shop Today",
+    clearShiftBtn: "Save Today's Records",
     downloadPdfBtn: "Download PDF Report",
-    clearShiftConfirm: "Are you sure you want to close the shop for today? The daily shopping list will be cleared, but all past sales history will be retained.",
-    shiftClearedToast: "Shop closed for today successfully!",
+    clearShiftConfirm: "Are you sure you want to save today's records? The daily shopping list will be cleared, but all past sales history will be safely stored and can be reviewed later.",
+    shiftClearedToast: "Today's records saved successfully!",
     noSalesToday: "No sales recorded for this date.",
     zReportTitle: "Daily Sales & Stock Report",
-    confirmClearShiftHeader: "Close Shop Today?",
-    confirmClearShiftBody: "This action will conclude today's shift and clear your daily shopping list. All sales history will be safely stored and can be reviewed later.",
-    confirmClearShiftBtn: "Yes, Close Shop",
+    confirmClearShiftHeader: "Save Today's Records?",
+    confirmClearShiftBody: "This action will save today's sales and clear your daily shopping list. All sales history will be safely stored and can be reviewed later by selecting the date.",
+    confirmClearShiftBtn: "Yes, Save Records",
     downloadingPdf: "Downloading PDF...",
     unitPrice: "Unit Price",
     configConsole: "Configuration Console",
@@ -405,9 +409,10 @@ const TRANSLATIONS = {
     noLimit: "ไม่จำกัด",
     copiedText: "เตรียมข้อความส่งไลน์เรียบร้อย!",
     paymentMethodSection: "วิธีการชำระเงิน",
-    paymentMethodRequired: "กรุณาเลือกวิธีการชำระเงิน (เงินสด หรือ เงินโอน)!",
+    paymentMethodRequired: "กรุณาเลือกวิธีการชำระเงิน (เงินสด, เงินโอน หรือ ออนไลน์)!",
     cashOption: "เงินสด",
     transferOption: "เงินโอน",
+    onlineOption: "ออนไลน์",
     paymentMethodPrompt: "เลือกว่าลูกค้าชำระเงินด้วยวิธีใด (จำเป็น):",
     lineSharePrepared: "เตรียมส่งข้อมูลไปที่ไลน์เรียบร้อย!",
     lineShareInstructions: "บันทึกยอดขายแล้ว กดปุ่มด้านล่างเพื่อเปิดไลน์หรือคัดลอกข้อความ",
@@ -419,6 +424,7 @@ const TRANSLATIONS = {
     resendToLine: "ส่งเข้าไลน์",
     cashBreakdown: "ชำระด้วยเงินสด",
     transferBreakdown: "ชำระด้วยเงินโอน",
+    onlineBreakdown: "ชำระออนไลน์",
     
     // Navigation Keys - Pure Thai without English
     tabRegister: "หน้าขาย",
@@ -456,15 +462,15 @@ const TRANSLATIONS = {
     totalCash: "ยอดเงินสด",
     totalTransactions: "จำนวนบิลขาย",
     itemizedSales: "สรุปรายการขายแยกประเภท",
-    clearShiftBtn: "ปิดร้านวันนี้",
+    clearShiftBtn: "บันทึกรายการวันนี้",
     downloadPdfBtn: "ดาวน์โหลดรายงาน",
-    clearShiftConfirm: "คุณต้องการปิดร้านของวันนี้ใช่หรือไม่? ระบบจะบันทึกยอดขายของวันนี้ไว้ และล้างรายการซื้อของเพื่อเตรียมพร้อมสำหรับวันถัดไป",
-    shiftClearedToast: "ปิดร้านวันนี้และล้างรายการซื้อของเรียบร้อย!",
+    clearShiftConfirm: "คุณต้องการบันทึกรายการของวันนี้ใช่หรือไม่? ระบบจะบันทึกยอดขายของวันนี้ไว้ให้เรียกดูย้อนหลังได้ และล้างรายการซื้อของเพื่อเตรียมพร้อมสำหรับวันถัดไป",
+    shiftClearedToast: "บันทึกรายการวันนี้เรียบร้อย!",
     noSalesToday: "ไม่มีประวัติการขายสำหรับวันที่เลือก",
     zReportTitle: "รายงานสรุปยอดขายประจำวัน",
-    confirmClearShiftHeader: "ปิดร้านวันนี้?",
-    confirmClearShiftBody: "การดำเนินการนี้จะสิ้นสุดการขายของวันนี้ รายการซื้อของ (Shopping List) จะถูกล้าง แต่ประวัติการขายทั้งหมดจะถูกบันทึกไว้ให้คุณดูย้อนหลังได้",
-    confirmClearShiftBtn: "ตกลง, ปิดร้าน",
+    confirmClearShiftHeader: "บันทึกรายการวันนี้?",
+    confirmClearShiftBody: "การดำเนินการนี้จะบันทึกยอดขายของวันนี้และล้างรายการซื้อของ ประวัติการขายทั้งหมดจะถูกจัดเก็บและสามารถเรียกดูย้อนหลังได้โดยการเลือกวันที่",
+    confirmClearShiftBtn: "ตกลง, บันทึกรายการ",
     downloadingPdf: "กำลังดาวน์โหลดรายงาน...",
     unitPrice: "ราคาต่อหน่วย",
     configConsole: "แผงควบคุมระบบ",
@@ -514,6 +520,8 @@ const TRANSLATIONS = {
     cashIncome: "เงินสด",
     totalTransferLabel: "เงินโอน",
     transferIncome: "เงินโอน",
+    totalOnlineLabel: "ออนไลน์",
+    onlineIncome: "ออนไลน์",
     totalBillsLabel: "จำนวนบิล",
     totalOrders: "จำนวนออเดอร์",
     totalRestockEventsLabel: "เติมสต็อก",
@@ -538,13 +546,13 @@ export default function App() {
   const [showToast, setShowToast] = useState<string | null>(null);
 
   // Payment Method & LINE Share States
-  const [paymentMethod, setPaymentMethod] = useState<"เงินสด" | "เงินโอน" | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<"เงินสด" | "เงินโอน" | "ออนไลน์" | null>(null);
   const [paymentMethodError, setPaymentMethodError] = useState(false);
   const [lineOrderModal, setLineOrderModal] = useState<{
     isOpen: boolean;
     message: string;
     shareUrl: string;
-    paymentMethod: "เงินสด" | "เงินโอน";
+    paymentMethod: "เงินสด" | "เงินโอน" | "ออนไลน์";
     total: number;
     hasSlip: boolean;
   } | null>(null);
@@ -567,6 +575,7 @@ export default function App() {
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
   const [updateBannerDismissed, setUpdateBannerDismissed] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [timezone, setTimezoneState] = useState(getTimezone());
 
   const [shopProfile, setShopProfile] = useState({
     name: "SlipPro Coffee",
@@ -849,10 +858,25 @@ export default function App() {
     }, 500);
   };
 
+  const checkDayChange = () => {
+    const today = getLocalDateString();
+    const lastDate = localStorage.getItem("slippro_last_opened_date");
+    if (lastDate && lastDate !== today) {
+      setCustomShoppingList([]);
+      localStorage.setItem("slippro_custom_shopping_v1", JSON.stringify([]));
+      setCart([]);
+      if (selectedReportDate === lastDate) {
+        setSelectedReportDate(today);
+      }
+    }
+    localStorage.setItem("slippro_last_opened_date", today);
+  };
+
   // Automatic Background Update Checks
   useEffect(() => {
     // Initial check
     checkForUpdates(false);
+    checkDayChange();
 
     // Online / offline listeners
     const handleOnline = () => {
@@ -866,10 +890,14 @@ export default function App() {
     // Check periodically every 4 minutes
     const interval = setInterval(() => {
       checkForUpdates(false);
+      checkDayChange();
     }, 4 * 60 * 1000);
 
     // Check when user returns to window
-    const handleFocus = () => checkForUpdates(false);
+    const handleFocus = () => {
+      checkForUpdates(false);
+      checkDayChange();
+    };
     window.addEventListener('focus', handleFocus);
 
     // Listen to custom event dispatched by main.tsx
@@ -999,7 +1027,19 @@ export default function App() {
           canvas.width = width;
           canvas.height = height;
           const ctx = canvas.getContext("2d");
-          ctx?.drawImage(img, 0, 0, width, height);
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            
+            const timestampStr = `${getLocalDateString()} ${getLocalTimeString()}`;
+            
+            ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+            ctx.fillRect(0, height - 40, width, 40);
+            ctx.font = "20px sans-serif";
+            ctx.fillStyle = "white";
+            ctx.textAlign = "right";
+            ctx.textBaseline = "middle";
+            ctx.fillText(timestampStr, width - 20, height - 20);
+          }
           const compressedBase64 = canvas.toDataURL("image/jpeg", 0.7);
           
           setCapturedSlip(compressedBase64);
@@ -1129,7 +1169,9 @@ export default function App() {
 
   const handleResendToLine = (tx: Transaction) => {
     const isThai = lang === "th";
-    const paymentText = tx.paymentMethod === "เงินโอน"
+    const paymentText = tx.paymentMethod === "ออนไลน์"
+      ? (isThai ? "ออนไลน์" : "Online")
+      : tx.paymentMethod === "เงินโอน"
       ? (isThai ? "เงินโอน" : "Bank Transfer")
       : (isThai ? "เงินสด" : "Cash");
 
@@ -1145,7 +1187,7 @@ export default function App() {
       });
       message += `-------------------------\n`;
       message += `ยอดรวมทั้งสิ้น: ฿${tx.total}\n`;
-      message += `สถานะสลิป: ${tx.slipThumbnail ? "แนบสลิปเรียบร้อย" : (tx.paymentMethod === "เงินโอน" ? "เงินโอน (ไม่ได้แนบสลิป)" : "ชำระเงินสด")}\n`;
+      message += `สถานะสลิป: ${tx.slipThumbnail ? "แนบสลิปเรียบร้อย" : (tx.paymentMethod === "ออนไลน์" ? "ชำระออนไลน์" : (tx.paymentMethod === "เงินโอน" ? "เงินโอน (ไม่ได้แนบสลิป)" : "ชำระเงินสด"))}\n`;
       if (tx.lowStockAlerts && tx.lowStockAlerts.length > 0) {
         message += `\nแจ้งเตือนสินค้าใกล้หมด:\n`;
         tx.lowStockAlerts.forEach(alert => {
@@ -1163,7 +1205,7 @@ export default function App() {
       });
       message += `-------------------------\n`;
       message += `TOTAL: ฿${tx.total}\n`;
-      message += `Slip Status: ${tx.slipThumbnail ? "Attached" : (tx.paymentMethod === "เงินโอน" ? "Transfer (No Slip)" : "Cash Payment")}\n`;
+      message += `Slip Status: ${tx.slipThumbnail ? "Attached" : (tx.paymentMethod === "ออนไลน์" ? "Online Payment" : (tx.paymentMethod === "เงินโอน" ? "Transfer (No Slip)" : "Cash Payment"))}\n`;
       if (tx.lowStockAlerts && tx.lowStockAlerts.length > 0) {
         message += `\n${t.lowStockAlertText}\n`;
         tx.lowStockAlerts.forEach(alert => {
@@ -1211,10 +1253,13 @@ export default function App() {
 
     const { id, nameEN, nameTH, price, trackStock, currentStock, lowStockThreshold, image } = editingItem;
     const finalPrice = (price === undefined || price === "" || isNaN(Number(price))) ? 10 : Number(price);
-    if (!nameEN || !nameTH || finalPrice < 0 || !image) {
-      triggerToast("Please fill all required fields correctly.");
+    if ((!nameEN && !nameTH) || finalPrice < 0 || !image) {
+      triggerToast("Please provide at least one name and all other required fields.");
       return;
     }
+    
+    const finalNameEN = nameEN || nameTH || "Item";
+    const finalNameTH = nameTH || nameEN || "Item";
 
     let updatedMenuItems: MenuItem[] = [];
     if (id) {
@@ -1223,8 +1268,8 @@ export default function App() {
         item.id === id 
           ? { 
               ...item, 
-              nameEN, 
-              nameTH, 
+              nameEN: finalNameEN, 
+              nameTH: finalNameTH, 
               price: finalPrice, 
               trackStock: !!trackStock, 
               currentStock: trackStock ? Number(currentStock ?? 0) : 99, 
@@ -1238,8 +1283,8 @@ export default function App() {
       // Create new
       const newItem: MenuItem = {
         id: "item_" + Date.now(),
-        nameEN,
-        nameTH,
+        nameEN: finalNameEN,
+        nameTH: finalNameTH,
         price: finalPrice,
         trackStock: !!trackStock,
         currentStock: trackStock ? Number(currentStock ?? 0) : 99,
@@ -1345,7 +1390,9 @@ export default function App() {
   const cashTotal = cashTx.reduce((sum, tx) => sum + (tx.total || 0), 0);
   const transferTx = dayTx.filter(tx => tx && tx.paymentMethod === "เงินโอน");
   const transferTotal = transferTx.reduce((sum, tx) => sum + (tx.total || 0), 0);
-  const totalEarnings = cashTotal + transferTotal;
+  const onlineTx = dayTx.filter(tx => tx && tx.paymentMethod === "ออนไลน์");
+  const onlineTotal = onlineTx.reduce((sum, tx) => sum + (tx.total || 0), 0);
+  const totalEarnings = cashTotal + transferTotal + onlineTotal;
   const totalOrders = dayTx.length;
   const totalRestockedUnits = dayRestocks.reduce((sum, r) => sum + (r.amount || 0), 0);
   const totalRestockEventsCount = dayRestocks.length;
@@ -1450,6 +1497,8 @@ export default function App() {
         cashCount: cashTx.length,
         transferTotal,
         transferCount: transferTx.length,
+        onlineTotal,
+        onlineCount: onlineTx.length,
         totalEarnings,
         totalOrders,
         totalRestockedUnits,
@@ -1645,9 +1694,10 @@ export default function App() {
             {/* Quick Restock for simulation ease */}
             <button
               id="restock-btn"
+              disabled
               onClick={() => setShowRestockConfirm(true)}
               title={t.resetStockButton}
-              className="p-1.5 rounded-full bg-slate-50 hover:bg-slate-100 border border-slate-200 transition-all text-slate-500 hover:text-slate-900 cursor-pointer active:scale-95"
+              className="hidden p-1.5 rounded-full bg-slate-50 hover:bg-slate-100 border border-slate-200 transition-all text-slate-500 hover:text-slate-900 cursor-pointer active:scale-95"
             >
               <RefreshCw className="w-3.5 h-3.5" />
             </button>
@@ -2033,7 +2083,7 @@ export default function App() {
                     {t.paymentMethodPrompt}
                   </p>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-3 gap-3">
                     {/* Cash Option Button */}
                     <button
                       type="button"
@@ -2093,6 +2143,36 @@ export default function App() {
                         <span className="text-[10px] text-slate-400 font-medium">{lang === "en" ? "Tap to choose" : "แตะเพื่อเลือก"}</span>
                       )}
                     </button>
+
+                    {/* Online Option Button */}
+                    <button
+                      type="button"
+                      id="payment-method-online"
+                      onClick={() => {
+                        setPaymentMethod("ออนไลน์");
+                        setPaymentMethodError(false);
+                      }}
+                      className={`p-4 rounded-2xl border-2 flex flex-col items-center justify-center gap-2 transition-all cursor-pointer ${
+                        paymentMethod === "ออนไลน์"
+                          ? "border-purple-600 bg-purple-50 text-purple-950 shadow-md shadow-purple-600/10 scale-[1.02]"
+                          : "border-slate-200 hover:border-slate-300 bg-slate-50/70 text-slate-700 hover:bg-slate-50 active:scale-98"
+                      }`}
+                    >
+                      <span className="text-3xl">🌐</span>
+                      <div className="text-center">
+                        <span className="block text-sm font-black tracking-tight">{lang === "th" ? "ออนไลน์" : "Online"}</span>
+                        {lang === "en" && (
+                          <span className="block text-[10px] font-bold text-slate-500 uppercase mt-0.5">Online</span>
+                        )}
+                      </div>
+                      {paymentMethod === "ออนไลน์" ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-700 bg-white px-2 py-0.5 rounded-full border border-purple-200">
+                          <Check className="w-3 h-3 stroke-[3]" /> {lang === "en" ? "Selected" : "เลือกแล้ว"}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-slate-400 font-medium">{lang === "en" ? "Tap to choose" : "แตะเพื่อเลือก"}</span>
+                      )}
+                    </button>
                   </div>
 
                   {paymentMethodError && (
@@ -2141,11 +2221,13 @@ export default function App() {
                               </span>
                               {/* Payment Method Badge */}
                               <span className={`inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full border ${
-                                isTransfer
-                                  ? "bg-blue-50 text-blue-700 border-blue-200"
-                                  : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                tx.paymentMethod === "ออนไลน์"
+                                  ? "bg-purple-50 text-purple-700 border-purple-200"
+                                  : isTransfer
+                                    ? "bg-blue-50 text-blue-700 border-blue-200"
+                                    : "bg-emerald-50 text-emerald-700 border-emerald-200"
                               }`}>
-                                {isTransfer ? (lang === "th" ? "📲 เงินโอน" : "📲 Transfer") : (lang === "th" ? "💵 เงินสด" : "💵 Cash")}
+                                {tx.paymentMethod === "ออนไลน์" ? (lang === "th" ? "🌐 ออนไลน์" : "🌐 Online") : isTransfer ? (lang === "th" ? "📲 เงินโอน" : "📲 Transfer") : (lang === "th" ? "💵 เงินสด" : "💵 Cash")}
                               </span>
                             </div>
                             <span className="text-sm font-mono font-black text-slate-900 bg-slate-100 text-slate-900 px-2.5 py-1 rounded-lg border border-slate-200">
@@ -2348,8 +2430,8 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Sub-cards: Cash, Transfer, Restock */}
-                <div className="grid grid-cols-3 gap-2.5">
+                {/* Sub-cards: Cash, Transfer, Online, Restock */}
+                <div className="grid grid-cols-2 gap-2.5">
                   {/* Cash Card */}
                   <div className="bg-white border border-slate-200/80 rounded-2xl p-3.5 shadow-sm">
                     <div className="flex items-center gap-1 text-[10px] font-bold text-slate-500 uppercase">
@@ -2375,6 +2457,20 @@ export default function App() {
                     </p>
                     <p className="text-[9px] text-slate-400 font-mono mt-0.5 font-semibold">
                       {transferTx.length} {lang === "th" ? "บิล" : "tx"}
+                    </p>
+                  </div>
+
+                  {/* Online Card */}
+                  <div className="bg-white border border-slate-200/80 rounded-2xl p-3.5 shadow-sm">
+                    <div className="flex items-center gap-1 text-[10px] font-bold text-slate-500 uppercase">
+                      <span>🌐</span>
+                      <span>{t.onlineIncome}</span>
+                    </div>
+                    <p className="text-lg font-black font-mono text-purple-600 mt-1.5">
+                      {t.thb}{onlineTotal}
+                    </p>
+                    <p className="text-[9px] text-slate-400 font-mono mt-0.5 font-semibold">
+                      {onlineTx.length} {lang === "th" ? "บิล" : "tx"}
                     </p>
                   </div>
 
@@ -2623,7 +2719,7 @@ export default function App() {
                 </p>
                 {paymentMethod && (
                   <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-800 border border-slate-200">
-                    <span>{paymentMethod === "เงินโอน" ? "📲 เงินโอน (Transfer)" : "💵 เงินสด (Cash)"}</span>
+                    <span>{paymentMethod === "ออนไลน์" ? "🌐 ออนไลน์ (Online)" : paymentMethod === "เงินโอน" ? "📲 เงินโอน (Transfer)" : "💵 เงินสด (Cash)"}</span>
                   </div>
                 )}
               </div>
@@ -2681,13 +2777,17 @@ export default function App() {
                 <div className="flex justify-between items-center">
                   <span className="text-slate-500">{t.paymentMethodSection}:</span>
                   <span className={`font-bold text-[11px] px-2 py-0.5 rounded ${
-                    lineOrderModal.paymentMethod === "เงินโอน"
-                      ? "bg-blue-100 text-blue-800"
-                      : "bg-emerald-100 text-emerald-800"
+                    lineOrderModal.paymentMethod === "ออนไลน์"
+                      ? "bg-purple-100 text-purple-800"
+                      : lineOrderModal.paymentMethod === "เงินโอน"
+                        ? "bg-blue-100 text-blue-800"
+                        : "bg-emerald-100 text-emerald-800"
                   }`}>
-                    {lineOrderModal.paymentMethod === "เงินโอน" 
-                      ? (lang === "th" ? "📲 เงินโอน" : "📲 Bank Transfer") 
-                      : (lang === "th" ? "💵 เงินสด" : "💵 Cash")}
+                    {lineOrderModal.paymentMethod === "ออนไลน์" 
+                      ? (lang === "th" ? "🌐 ออนไลน์" : "🌐 Online") 
+                      : lineOrderModal.paymentMethod === "เงินโอน" 
+                        ? (lang === "th" ? "📲 เงินโอน" : "📲 Bank Transfer") 
+                        : (lang === "th" ? "💵 เงินสด" : "💵 Cash")}
                   </span>
                 </div>
               </div>
@@ -3014,6 +3114,23 @@ export default function App() {
                       />
                     </div>
                     <div className="space-y-1">
+                      <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block">Timezone</label>
+                      <select
+                        value={timezone}
+                        onChange={(e) => {
+                          setTimezoneState(e.target.value);
+                          setTimezone(e.target.value);
+                        }}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:border-slate-900 bg-slate-50 focus:bg-white transition-all"
+                      >
+                        <option value="Asia/Bangkok">Bangkok (GMT+7)</option>
+                        <option value="UTC">UTC</option>
+                        <option value="Asia/Tokyo">Tokyo (GMT+9)</option>
+                        <option value="America/New_York">New York (EST/EDT)</option>
+                        <option value="Europe/London">London (GMT/BST)</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
                       <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block">{t.shopAddress}</label>
                       <textarea
                         value={shopProfile.address}
@@ -3049,23 +3166,13 @@ export default function App() {
                           {editingItem.id ? t.editMenuItem : t.addMenuItem}
                         </h4>
 
-                        <div className="grid grid-cols-2 gap-2.5">
+                        <div className="grid grid-cols-1 gap-2.5">
                           <div className="space-y-1">
-                            <label className="text-[9px] uppercase font-bold text-slate-400 block">{t.itemNameEN}</label>
+                            <label className="text-[9px] uppercase font-bold text-slate-400 block">{lang === "th" ? "ชื่อรายการเมนู (Name)" : "Menu Item Name"}</label>
                             <input
                               type="text"
                               value={editingItem.nameEN || ""}
-                              onChange={(e) => setEditingItem({...editingItem, nameEN: e.target.value})}
-                              className="w-full px-3 py-1.5 border border-slate-200 rounded-xl text-xs font-semibold bg-white focus:outline-none focus:border-slate-900"
-                              required
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-[9px] uppercase font-bold text-slate-400 block">{t.itemNameTH}</label>
-                            <input
-                              type="text"
-                              value={editingItem.nameTH || ""}
-                              onChange={(e) => setEditingItem({...editingItem, nameTH: e.target.value})}
+                              onChange={(e) => setEditingItem({...editingItem, nameEN: e.target.value, nameTH: e.target.value})}
                               className="w-full px-3 py-1.5 border border-slate-200 rounded-xl text-xs font-semibold bg-white focus:outline-none focus:border-slate-900"
                               required
                             />
@@ -3172,7 +3279,7 @@ export default function App() {
                           <span className="text-[10px] uppercase font-bold text-slate-400">{t.currentCatalog}</span>
                           <button
                             type="button"
-                            onClick={() => setEditingItem({ price: 10, trackStock: false, currentStock: 99, lowStockThreshold: 0, image: "☕" })}
+                            onClick={() => setEditingItem({ price: 10, trackStock: false, currentStock: 99, lowStockThreshold: 0, image: "🍡" })}
                             className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-bold rounded-lg flex items-center gap-1 cursor-pointer transition-all active:scale-95"
                           >
                             <Plus className="w-3.5 h-3.5" />
