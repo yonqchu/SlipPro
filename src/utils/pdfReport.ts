@@ -130,12 +130,12 @@ export const generateDailyPdfReport = async (params: GeneratePdfParams): Promise
       
       <!-- Top Header -->
       <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 14px; margin-bottom: 18px;">
-        <div>
+        <div style="width: 60%;">
           <h1 style="font-size: 22px; font-weight: 900; color: #0f172a; margin: 0; text-transform: uppercase;">${params.shopProfile.name}</h1>
           <p style="font-size: 11px; color: #475569; margin: 4px 0 0 0; font-weight: 500;">📍 ${params.shopProfile.address}</p>
         </div>
-        <div style="text-align: right;">
-          <div style="display: inline-block; background-color: #0f172a; color: #ffffff; padding: 4px 12px; border-radius: 9999px; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">
+        <div style="width: 38%; text-align: right;">
+          <div style="display: inline-block; background-color: #0f172a; color: #ffffff; padding: 6px 14px; border-radius: 8px; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px;">
             ${isTh ? "รายงานประจำวัน" : "DAILY REPORT"}
           </div>
           <p style="font-size: 11px; color: #334155; margin: 0; font-weight: 700; font-family: monospace;">${params.formattedDate}</p>
@@ -143,9 +143,9 @@ export const generateDailyPdfReport = async (params: GeneratePdfParams): Promise
       </div>
 
       <!-- Financial KPI Breakdown Cards -->
-      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px;">
+      <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
         <!-- Cash Card -->
-        <div style="border: 1px solid #d1fae5; background-color: #f0fdf4; padding: 12px; border-radius: 10px; text-align: center;">
+        <div style="width: 32%; box-sizing: border-box; border: 1px solid #d1fae5; background-color: #f0fdf4; padding: 12px; border-radius: 10px; text-align: center;">
           <span style="font-size: 10px; font-weight: 800; text-transform: uppercase; color: #065f46;">
             ${isTh ? "💵 เงินสด" : "💵 Cash Payments"}
           </span>
@@ -154,7 +154,7 @@ export const generateDailyPdfReport = async (params: GeneratePdfParams): Promise
         </div>
 
         <!-- Transfer Card -->
-        <div style="border: 1px solid #dbeafe; background-color: #eff6ff; padding: 12px; border-radius: 10px; text-align: center;">
+        <div style="width: 32%; box-sizing: border-box; border: 1px solid #dbeafe; background-color: #eff6ff; padding: 12px; border-radius: 10px; text-align: center;">
           <span style="font-size: 10px; font-weight: 800; text-transform: uppercase; color: #1e40af;">
             ${isTh ? "📲 เงินโอน" : "📲 Bank Transfers"}
           </span>
@@ -163,7 +163,7 @@ export const generateDailyPdfReport = async (params: GeneratePdfParams): Promise
         </div>
 
         <!-- Total Revenue Card -->
-        <div style="border: 1px solid #0f172a; background-color: #0f172a; color: #ffffff; padding: 12px; border-radius: 10px; text-align: center;">
+        <div style="width: 32%; box-sizing: border-box; border: 1px solid #0f172a; background-color: #0f172a; color: #ffffff; padding: 12px; border-radius: 10px; text-align: center;">
           <span style="font-size: 10px; font-weight: 800; text-transform: uppercase; color: #cbd5e1;">
             ${isTh ? "💰 ยอดรวมทั้งหมด" : "💰 Total Revenue"}
           </span>
@@ -173,9 +173,9 @@ export const generateDailyPdfReport = async (params: GeneratePdfParams): Promise
       </div>
 
       <!-- Two Column: Cake Chart & Stock Balance Table -->
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;">
+      <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
         <!-- Left: Donut Chart -->
-        <div style="border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; background-color: #ffffff;">
+        <div style="width: 48%; box-sizing: border-box; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; background-color: #ffffff;">
           <h3 style="font-size: 12px; font-weight: 800; color: #0f172a; margin: 0 0 10px 0; text-transform: uppercase;">
             🍰 ${isTh ? "กราฟสินค้าขายดีประจำวัน" : "Best Sellers Cake Chart"}
           </h3>
@@ -188,7 +188,7 @@ export const generateDailyPdfReport = async (params: GeneratePdfParams): Promise
         </div>
 
         <!-- Right: Daily Stock Movements -->
-        <div style="border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; background-color: #ffffff;">
+        <div style="width: 48%; box-sizing: border-box; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px; background-color: #ffffff;">
           <h3 style="font-size: 12px; font-weight: 800; color: #0f172a; margin: 0 0 10px 0; text-transform: uppercase;">
             📦 ${isTh ? "สรุปสต็อกสินค้าประจำวัน" : "Daily Stock Balance"}
           </h3>

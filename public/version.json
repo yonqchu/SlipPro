@@ -1,6 +1,6 @@
 {
-  "version": "1.4.0",
-  "buildTime": "2026-09-14T18:00:00Z",
-  "cacheName": "slippro-cache-v12",
-  "releaseNotes": "Pure Thai UI cleanup, streamlined LINE sharing from History tab, daily opening stock & restock recording, and Z-report financial breakdown with PDF export."
+  "version": "1.4.1",
+  "buildTime": "2026-09-14T18:17:00Z",
+  "cacheName": "slippro-cache-v15",
+  "releaseNotes": "System stability patch fixing array initialization crashes on cold start, and corrected PDF layout clipping for the daily report badge and donut chart."
 }
