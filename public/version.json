@@ -1,6 +1,6 @@
 {
-  "version": "1.2.1",
-  "buildTime": "2026-09-14T16:30:00Z",
-  "cacheName": "slippro-cache-v10",
-  "releaseNotes": "Integrated built-in auto-update system, interactive version badge, System & Version console, cash/transfer payment options, and universal LINE share."
+  "version": "1.4.0",
+  "buildTime": "2026-09-14T18:00:00Z",
+  "cacheName": "slippro-cache-v12",
+  "releaseNotes": "Pure Thai UI cleanup, streamlined LINE sharing from History tab, daily opening stock & restock recording, and Z-report financial breakdown with PDF export."
 }

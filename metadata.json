@@ -1,6 +1,6 @@
 {
   "name": "SlipPro",
-  "description": "Mobile-first bilingual sales assistant with slip capture, stock tracking, and LINE boss notification.",
+  "description": "Mobile-first bilingual POS with pure Thai localization, daily opening stock tracking, fast inventory restock, sales & restock timeline, cash and transfer accounting, and bestseller cake charts with PDF export.",
   "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

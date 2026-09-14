@@ -1,4 +1,4 @@
-const CACHE_NAME = 'slippro-cache-v10';
+const CACHE_NAME = 'slippro-cache-v14';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -38,9 +38,15 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(event.request.url);
 
-  // Always fetch version.json from network to ensure update checks are fresh
-  if (url.pathname.endsWith('/version.json') || url.pathname.endsWith('version.json')) {
-    event.respondWith(fetch(event.request, { cache: 'no-store' }));
+  // Always bypass cache for dev modules, vite client, source files, and version checks
+  if (
+    url.pathname.startsWith('/@') ||
+    url.pathname.startsWith('/src/') ||
+    url.pathname.includes('/node_modules/') ||
+    url.pathname.includes('version.json') ||
+    url.search.includes('v=') ||
+    url.search.includes('import')
+  ) {
     return;
   }
 

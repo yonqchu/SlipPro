@@ -29,6 +29,11 @@ import {
   FileText,
   BarChart3,
   ChevronLeft,
+  ChevronRight,
+  Calendar,
+  PackagePlus,
+  Boxes,
+  PieChart,
   Copy,
   ExternalLink,
   Wifi,
@@ -39,6 +44,22 @@ import QRCode from "qrcode";
 import { Html5Qrcode } from "html5-qrcode";
 import html2pdf from "html2pdf.js";
 import { APP_VERSION, CACHE_VERSION, BUILD_TIME } from "./version";
+import {
+  RestockEvent,
+  getLocalDateString,
+  getLocalTimeString,
+  ensureOpeningStock,
+  getOpeningStockForDate,
+  getAllRestockEvents,
+  addRestockEvent,
+  CAKE_PALETTE,
+  CakeChartSlice,
+} from "./dailyStock";
+import { QuickRestockModal } from "./components/QuickRestockModal";
+import { CakeChart } from "./components/CakeChart";
+import { DailyStockTable, DailyStockRow } from "./components/DailyStockTable";
+import { DailyTimeline, TimelineEvent } from "./components/DailyTimeline";
+import { generateDailyPdfReport } from "./utils/pdfReport";
 
 // Types
 interface MenuItem {
@@ -61,6 +82,9 @@ interface CartItem {
 interface Transaction {
   id: string;
   timestamp: string;
+  date?: string; // YYYY-MM-DD
+  time?: string; // HH:mm:ss
+  rawTimestamp?: number;
   items: {
     nameEN: string;
     nameTH: string;
@@ -169,7 +193,7 @@ const DEFAULT_MENU_ITEMS: MenuItem[] = [
 const TRANSLATIONS = {
   en: {
     appTitle: "SlipPro",
-    subtitle: "Mobile Sales Companion",
+    subtitle: "Mobile Sales & Inventory Companion",
     languageLabel: "TH",
     quickTapMenu: "Quick-Tap Menu",
     cartTitle: "Shopping Cart",
@@ -190,7 +214,7 @@ const TRANSLATIONS = {
     retakeButton: "Retake Photo",
     slipCaptured: "Slip Captured Successfully",
     removeSlip: "Remove Slip",
-    sendToBossButton: "SEND",
+    sendToBossButton: "Complete Sale",
     resetStockButton: "Restock All",
     resetStockSuccess: "Stock successfully restocked to defaults!",
     confirmRestockHeader: "Reset Stock Levels?",
@@ -202,10 +226,10 @@ const TRANSLATIONS = {
     slipNotAttached: "No Payment Slip Attached",
     lowStockAlertText: "⚠️ LOW STOCK ALERT",
     clearCartButton: "Clear Cart",
-    saleSuccessToast: "Sale completed! Redirecting to LINE...",
-    confirmHeader: "Deduct Stock & Send?",
-    confirmBody: "Are you sure you want to finalize this sale of ฿{total} and open LINE sharing?",
-    confirmBtn: "Yes, Send",
+    saleSuccessToast: "Sale completed successfully!",
+    confirmHeader: "Complete Sale?",
+    confirmBody: "Are you sure you want to finalize this sale of ฿{total} and deduct stock?",
+    confirmBtn: "Finish & Deduct Stock",
     cancelBtn: "Cancel",
     todayAt: "Today at",
     recentSales: "Recent Sales Log",
@@ -229,10 +253,10 @@ const TRANSLATIONS = {
     cashBreakdown: "Cash Payments",
     transferBreakdown: "Bank Transfers",
     
-    // Phase 2 Translation Keys
+    // Navigation Keys
     tabRegister: "Register",
     tabHistory: "History",
-    nextBtn: "Next",
+    nextBtn: "Payment",
     shopProfileTitle: "Shop Profile",
     shopName: "Shop Name",
     shopAddress: "Shop Address",
@@ -260,7 +284,6 @@ const TRANSLATIONS = {
     saveBtn: "Save",
     deleteBtn: "Delete",
     noLowStockItems: "No menu items currently below low stock threshold.",
-    // Phase 3 Translation Keys
     tabZReport: "Z-Report",
     totalCash: "Total Cash",
     totalTransactions: "Total Transactions",
@@ -269,8 +292,8 @@ const TRANSLATIONS = {
     downloadPdfBtn: "Download PDF Report",
     clearShiftConfirm: "Are you sure you want to clear today's sales data and the manual shopping list? Tracked stock levels and catalog items will remain intact.",
     shiftClearedToast: "Shift cleared successfully!",
-    noSalesToday: "No sales recorded today.",
-    zReportTitle: "End of Day Z-Report",
+    noSalesToday: "No sales recorded for this date.",
+    zReportTitle: "Daily Sales & Stock Report",
     confirmClearShiftHeader: "Wipe Shift & Start New Day?",
     confirmClearShiftBody: "This action will permanently delete all transaction logs of today and empty your shopping list. Your item stock counts and menu settings will NOT be changed.",
     confirmClearShiftBtn: "Yes, Clear Shift",
@@ -307,13 +330,39 @@ const TRANSLATIONS = {
     onlineStatus: "Online (Ready to sync)",
     offlineStatus: "Offline (Local PWA mode)",
     systemUpToDate: "Your application is currently running the latest release.",
-    dismissBtn: "Later"
+    dismissBtn: "Later",
+
+    // New Daily Stock & Restock Keys
+    quickRestockBtn: "Quick Restock",
+    quickRestockCardBtn: "+ Restock",
+    restockSuccessToast: "Item restocked successfully!",
+    selectedDateLabel: "Select Date",
+    todayBtn: "Today",
+    prevDayBtn: "Prev Day",
+    nextDayBtn: "Next Day",
+    allEarningsTotal: "Total Revenue",
+    allEarningsTogether: "Total Revenue (All)",
+    totalCashLabel: "Cash",
+    cashIncome: "Cash",
+    totalTransferLabel: "Transfer",
+    transferIncome: "Transfer",
+    totalBillsLabel: "Bills",
+    totalOrders: "Total Orders",
+    totalRestockEventsLabel: "Restocked",
+    restockUnitsCount: "Restocked",
+    quickRestock: "Quick Restock",
+    dailyStockTitle: "Daily Stock Balance",
+    dailyTimelineTitle: "Activity Timeline",
+    bestsellerCakeTitle: "Daily Best Sellers Chart",
+    bestSellerCakeChart: "Daily Best Sellers",
+    shoppingListTitle: "Restock & Procurement List",
+    minThreshold: "Min Threshold",
   },
   th: {
     appTitle: "SlipPro",
-    subtitle: "ระบบช่วยขายมือถือ",
-    languageLabel: "EN",
-    quickTapMenu: "เมนูด่วน (แตะเพื่อสั่ง)",
+    subtitle: "ระบบจัดการการขายและคลังสินค้า",
+    languageLabel: "ไทย",
+    quickTapMenu: "เมนูสินค้า",
     cartTitle: "ตะกร้าสินค้า",
     emptyCart: "ตะกร้าสินค้าว่างเปล่า แตะเมนูเพื่อเพิ่มสินค้า",
     totalAmount: "ยอดรวมทั้งหมด",
@@ -332,99 +381,100 @@ const TRANSLATIONS = {
     retakeButton: "ถ่ายรูปใหม่",
     slipCaptured: "บันทึกสลิปเรียบร้อยแล้ว",
     removeSlip: "ลบสลิป",
-    sendToBossButton: "SEND",
+    sendToBossButton: "สำเร็จรายการ",
     resetStockButton: "เติมคลังสินค้า",
-    resetStockSuccess: "รีเซ็ตและเติมคลังสินค้าเสร็จสิ้น!",
+    resetStockSuccess: "คืนค่าคลังสินค้าทั้งหมดเรียบร้อยแล้ว!",
     confirmRestockHeader: "คืนค่าระดับสต็อกสินค้าทั้งหมด?",
     confirmRestockBody: "คุณต้องการรีเซ็ตและเติมระดับสต็อกสินค้าทั้งหมดให้กลับเป็นค่าเริ่มต้นใช่หรือไม่? การดำเนินการนี้ไม่สามารถยกเลิกได้",
     confirmRestockBtn: "ใช่, รีเซ็ตสต็อก",
     transactionHistory: "ประวัติการขาย",
-    noTransactions: "ไม่มีประวัติการขายในเซสชันนี้",
-    slipAttached: "แนบสลิปการชำระเงินแล้ว",
-    slipNotAttached: "ไม่ได้แนบสลิปการชำระเงิน",
+    noTransactions: "ไม่มีประวัติการขายในระบบ",
+    slipAttached: "แนบสลิปแล้ว",
+    slipNotAttached: "ไม่ได้แนบสลิป",
     lowStockAlertText: "⚠️ แจ้งเตือนสินค้าใกล้หมด",
     clearCartButton: "ล้างตะกร้า",
-    saleSuccessToast: "บันทึกการขายสำเร็จ! กำลังส่งต่อไปยัง LINE...",
-    confirmHeader: "ตัดสต็อกและส่งรายการ?",
-    confirmBody: "คุณต้องการทำรายการขายมูลค่า ฿{total} และเปิดแชร์ไปยัง LINE ใช่หรือไม่?",
-    confirmBtn: "ใช่, ส่งรายการ",
+    saleSuccessToast: "บันทึกรายการขายสำเร็จเรียบร้อย!",
+    confirmHeader: "ยืนยันสำเร็จรายการ",
+    confirmBody: "คุณต้องการบันทึกการขายยอด ฿{total} และตัดสต็อกสินค้าใช่หรือไม่?",
+    confirmBtn: "บันทึกสำเร็จรายการ",
     cancelBtn: "ยกเลิก",
     todayAt: "วันนี้เวลา",
     recentSales: "ประวัติการขายล่าสุด",
-    simulationMode: "เปิดใช้งานโหมดจำลองอุปกรณ์เดสก์ท็อป",
+    simulationMode: "โหมดหน้าจอเดสก์ท็อป",
     tapToOrder: "แตะเพื่อสั่งสินค้า",
     noLimit: "ไม่จำกัด",
-    copiedText: "เตรียมข้อความแชร์ LINE เรียบร้อย!",
+    copiedText: "เตรียมข้อความส่งไลน์เรียบร้อย!",
     paymentMethodSection: "วิธีการชำระเงิน",
     paymentMethodRequired: "กรุณาเลือกวิธีการชำระเงิน (เงินสด หรือ เงินโอน)!",
     cashOption: "เงินสด",
     transferOption: "เงินโอน",
     paymentMethodPrompt: "เลือกว่าลูกค้าชำระเงินด้วยวิธีใด (จำเป็น):",
-    lineSharePrepared: "เตรียมส่งข้อมูลไปที่ LINE เรียบร้อย!",
-    lineShareInstructions: "บันทึกยอดขายแล้ว! กดปุ่มด้านล่างเพื่อเปิด LINE หรือคัดลอกข้อความ",
-    openLineApp: "เปิดแอป LINE",
+    lineSharePrepared: "เตรียมส่งข้อมูลไปที่ไลน์เรียบร้อย!",
+    lineShareInstructions: "บันทึกยอดขายแล้ว กดปุ่มด้านล่างเพื่อเปิดไลน์หรือคัดลอกข้อความ",
+    openLineApp: "เปิดแอปไลน์",
     copyOrderText: "คัดลอกข้อความ",
-    copiedSuccess: "คัดลอกลงคลิปบอร์ดแล้ว!",
+    copiedSuccess: "คัดลอกข้อความเรียบร้อยแล้ว!",
     newSaleBtn: "เริ่มบิลใหม่",
     shareViaApp: "แชร์ผ่านแอปอื่น",
-    resendToLine: "ส่งเข้า LINE",
+    resendToLine: "ส่งเข้าไลน์",
     cashBreakdown: "ชำระด้วยเงินสด",
     transferBreakdown: "ชำระด้วยเงินโอน",
-    tabRegister: "หน้าขายสินค้า (Register)",
-    tabHistory: "ประวัติ (History)",
-    nextBtn: "ถัดไป (Next)",
+    
+    // Navigation Keys - Pure Thai without English
+    tabRegister: "หน้าขาย",
+    tabHistory: "ประวัติการขาย",
+    nextBtn: "ชำระเงิน",
     shopProfileTitle: "ข้อมูลร้านค้า",
     shopName: "ชื่อร้านค้า",
     shopAddress: "ที่อยู่ร้านค้า",
-    shopLineId: "ไอดี LINE (สำหรับส่งยอด)",
-    pinPrompt: "กรอก PIN ผู้จัดการ (ค่าเริ่มต้น '1234')",
-    wrongPin: "รหัส PIN ไม่ถูกต้อง!",
-    managerModalTitle: "จัดการระบบ (Manager)",
+    shopLineId: "ไอดีไลน์ (สำหรับส่งยอด)",
+    pinPrompt: "กรอกรหัสผ่านผู้จัดการ (ค่าเริ่มต้น 1234)",
+    wrongPin: "รหัสผ่านไม่ถูกต้อง!",
+    managerModalTitle: "จัดการระบบ",
     addMenuItem: "เพิ่มรายการเมนู",
     editMenuItem: "แก้ไขรายการเมนู",
-    itemNameEN: "ชื่อสินค้า (อังกฤษ)",
-    itemNameTH: "ชื่อสินค้า (ไทย)",
-    itemPrice: "ราคา (฿)",
-    itemImage: "ไอคอนอิโมจิ (เช่น 🍵)",
+    itemNameEN: "ชื่อภาษาอังกฤษ",
+    itemNameTH: "ชื่อภาษาไทย",
+    itemPrice: "ราคา (บาท)",
+    itemImage: "ไอคอนรูปภาพ (เช่น ☕)",
     trackStock: "ติดตามคลังสินค้า",
     currentStock: "จำนวนสินค้าในคลัง",
     lowStockThreshold: "เกณฑ์เตือนคลังเหลือน้อย",
     customShoppingPlaceholder: "ระบุวัตถุดิบหรือรายการซื้อของเพิ่มเติม...",
     customShoppingAddBtn: "เพิ่ม",
-    exportSetupBtn: "ส่งออกตั้งค่า (QR)",
-    importSetupBtn: "นำเข้าตั้งค่า (QR)",
-    setupQrTitle: "รหัสคิวอาร์ระบบตั้งค่า",
-    scanQrPrompt: "สแกนคิวอาร์ด้วยกล้องหรือเลือกไฟล์รูปภาพเพื่อตั้งค่า",
+    exportSetupBtn: "ส่งออกข้อมูลตั้งค่า",
+    importSetupBtn: "นำเข้าข้อมูลตั้งค่า",
+    setupQrTitle: "คิวอาร์โค้ดตั้งค่าระบบ",
+    scanQrPrompt: "สแกนคิวอาร์โค้ดหรือเลือกไฟล์รูปภาพเพื่อตั้งค่า",
     scanSuccess: "นำเข้าข้อมูลร้านค้าและเมนูสำเร็จ!",
     scanFailed: "รหัสคิวอาร์สำหรับตั้งค่าไม่ถูกต้องหรือชำรุด",
     saveBtn: "บันทึก",
     deleteBtn: "ลบ",
     noLowStockItems: "ไม่มีเมนูสินค้าใดที่คลังต่ำกว่าเกณฑ์เตือน",
 
-    // Phase 3 Translation Keys
-    tabZReport: "ปิดยอด (Z-Report)",
-    totalCash: "ยอดเงินสดทั้งหมด",
+    tabZReport: "รายงานประจำวัน",
+    totalCash: "ยอดเงินสด",
     totalTransactions: "จำนวนบิลขาย",
     itemizedSales: "สรุปรายการขายแยกประเภท",
-    clearShiftBtn: "เริ่มวันใหม่ (เคลียร์กะ)",
-    downloadPdfBtn: "ดาวน์โหลดรายงาน PDF",
+    clearShiftBtn: "เริ่มกะใหม่",
+    downloadPdfBtn: "ดาวน์โหลดรายงาน",
     clearShiftConfirm: "คุณต้องการเคลียร์ประวัติการขายและรายการซื้อของในวันนี้ใช่หรือไม่? (คลังสินค้าและเมนูจะคงอยู่ตามปกติ)",
-    shiftClearedToast: "ล้างยอดขายและสรุปกะรอบวันเรียบร้อย!",
-    noSalesToday: "ไม่มีประวัติการขายในวันนี้",
-    zReportTitle: "รายงานปิดรอบวัน (Z-Report)",
+    shiftClearedToast: "ล้างยอดขายและเริ่มกะใหม่เรียบร้อย!",
+    noSalesToday: "ไม่มีประวัติการขายสำหรับวันที่เลือก",
+    zReportTitle: "รายงานสรุปยอดขายประจำวัน",
     confirmClearShiftHeader: "ล้างประวัติกะและเริ่มรอบใหม่?",
     confirmClearShiftBody: "การดำเนินการนี้จะลบประวัติการขายทั้งหมดของวันนี้และรายการวัตถุดิบซื้อของ แต่จะไม่ส่งผลกระทบใดๆ ต่อสต็อกสินค้าและเมนูร้านค้าของคุณ",
-    confirmClearShiftBtn: "ตกลง,เริ่มวันใหม่",
+    confirmClearShiftBtn: "ตกลง, เริ่มกะใหม่",
     downloadingPdf: "กำลังดาวน์โหลดรายงาน...",
     unitPrice: "ราคาต่อหน่วย",
     configConsole: "แผงควบคุมระบบ",
-    subTabProfile: "โปรไฟล์ร้านค้า",
+    subTabProfile: "ข้อมูลร้านค้า",
     subTabCatalog: "เมนูสินค้า",
-    subTabSync: "ซิงค์ข้อมูลผ่าน QR",
-    scanQrWithCamera: "สแกน QR ด้วยกล้อง",
+    subTabSync: "สำรองข้อมูล",
+    scanQrWithCamera: "สแกนคิวอาร์ด้วยกล้อง",
     cameraViewfinder: "ช่องมองภาพกล้อง",
-    alignQrInstruction: "จัดวางรหัส QR ตั้งค่าให้อยู่ภายในกรอบ",
-    mirrorInstruction: "แชร์คิวอาร์โค้ดนี้ไปยังอุปกรณ์อื่นเพื่อซิงค์ข้อมูลร้านและเมนูทั้งหมดได้ทันที!",
+    alignQrInstruction: "จัดวางรหัสคิวอาร์ให้อยู่ภายในกรอบ",
+    mirrorInstruction: "แชร์คิวอาร์โค้ดนี้ไปยังอุปกรณ์อื่นเพื่อซิงค์ข้อมูลร้านและเมนูทั้งหมดได้ทันที",
     downloadBtn: "ดาวน์โหลด",
     closeBtn: "ปิด",
     currentCatalog: "รายการเมนูปัจจุบัน",
@@ -432,23 +482,49 @@ const TRANSLATIONS = {
     appVersion: "เวอร์ชัน",
     checkForUpdates: "ตรวจสอบการอัปเดต",
     checkingUpdates: "กำลังตรวจสอบการอัปเดต...",
-    latestVersionToast: "SlipPro เป็นเวอร์ชันล่าสุดแล้ว (v{version})",
-    newVersionFound: "พบเวอร์ชันใหม่: v{version}!",
+    latestVersionToast: "ระบบเป็นเวอร์ชันล่าสุดแล้ว",
+    newVersionFound: "พบเวอร์ชันใหม่พร้อมให้อัปเดต",
     updateNowBtn: "อัปเดตทันที",
     updateNowInstruction: "มีเวอร์ชันใหม่พร้อมติดตั้ง แตะเพื่ออัปเดตทันที",
-    updatingAppToast: "กำลังอัปเดต SlipPro และโหลดใหม่...",
+    updatingAppToast: "กำลังอัปเดตระบบและโหลดใหม่...",
     clearCacheBtn: "ล้างแคชและโหลดใหม่",
-    cacheClearedToast: "ล้างแคชเรียบร้อย! กำลังโหลดใหม่...",
+    cacheClearedToast: "ล้างแคชเรียบร้อย กำลังโหลดใหม่...",
     subTabSystem: "ระบบและเวอร์ชัน",
     systemInfoTitle: "ระบบและการอัปเดต",
     currentVersionLabel: "เวอร์ชันปัจจุบัน",
-    cacheLayerLabel: "แคช Service Worker",
-    buildTimeLabel: "เวลาที่คอมไพล์",
+    cacheLayerLabel: "แคชระบบ",
+    buildTimeLabel: "เวลาที่บันทึก",
     connectionStatusLabel: "สถานะเครือข่าย",
-    onlineStatus: "ออนไลน์ (พร้อมซิงค์)",
-    offlineStatus: "ออฟไลน์ (ใช้งานโหมด PWA)",
-    systemUpToDate: "คุณกำลังใช้งาน SlipPro เวอร์ชันล่าสุดเรียบร้อยแล้ว",
-    dismissBtn: "ไว้คราวหลัง"
+    onlineStatus: "ออนไลน์ (พร้อมใช้งาน)",
+    offlineStatus: "ออฟไลน์ (ใช้งานในเครื่อง)",
+    systemUpToDate: "คุณกำลังใช้งานระบบเวอร์ชันล่าสุดเรียบร้อยแล้ว",
+    dismissBtn: "ไว้คราวหลัง",
+
+    // New Daily Stock & Restock Keys - Pure Thai
+    quickRestockBtn: "เติมสต็อกด่วน",
+    quickRestockCardBtn: "+ เติม",
+    restockSuccessToast: "เติมสต็อกสินค้าสำเร็จ!",
+    selectedDateLabel: "เลือกวันที่",
+    todayBtn: "วันนี้",
+    prevDayBtn: "วันก่อนหน้า",
+    nextDayBtn: "วันถัดไป",
+    allEarningsTotal: "ยอดขายรวมทั้งหมด",
+    allEarningsTogether: "ยอดขายรวมทุกช่องทาง",
+    totalCashLabel: "เงินสด",
+    cashIncome: "เงินสด",
+    totalTransferLabel: "เงินโอน",
+    transferIncome: "เงินโอน",
+    totalBillsLabel: "จำนวนบิล",
+    totalOrders: "จำนวนออเดอร์",
+    totalRestockEventsLabel: "เติมสต็อก",
+    restockUnitsCount: "เติมสินค้า",
+    quickRestock: "เติมสต็อกด่วน",
+    dailyStockTitle: "ความเคลื่อนไหวสต็อกประจำวัน",
+    dailyTimelineTitle: "ไทม์ไลน์การขายและการเติมสินค้า",
+    bestsellerCakeTitle: "กราฟสินค้าขายดีประจำวัน",
+    bestSellerCakeChart: "กราฟสินค้าขายดีประจำวัน",
+    shoppingListTitle: "รายการซื้อของและของใกล้หมด",
+    minThreshold: "เกณฑ์ขั้นต่ำ",
   }
 };
 
@@ -506,6 +582,12 @@ export default function App() {
   const [isCameraScanning, setIsCameraScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
 
+  // Daily Stock & Restock Reporting States
+  const [selectedReportDate, setSelectedReportDate] = useState<string>(getLocalDateString());
+  const [restockEvents, setRestockEvents] = useState<RestockEvent[]>([]);
+  const [restockModalOpen, setRestockModalOpen] = useState(false);
+  const [preselectedRestockItemId, setPreselectedRestockItemId] = useState<string | null>(null);
+
   // Phase 3 State Declarations
   const [showClearShiftConfirm, setShowClearShiftConfirm] = useState(false);
   const [showRestockConfirm, setShowRestockConfirm] = useState(false);
@@ -518,10 +600,17 @@ export default function App() {
 
   // Initialize data from localStorage or default
   useEffect(() => {
+    let initialItems = DEFAULT_MENU_ITEMS;
     const savedStock = localStorage.getItem("slippro_stock_v2");
     if (savedStock) {
       try {
-        setMenuItems(JSON.parse(savedStock));
+        const parsed = JSON.parse(savedStock);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          initialItems = parsed;
+          setMenuItems(parsed);
+        } else {
+          setMenuItems(DEFAULT_MENU_ITEMS);
+        }
       } catch (e) {
         setMenuItems(DEFAULT_MENU_ITEMS);
       }
@@ -530,17 +619,31 @@ export default function App() {
       localStorage.setItem("slippro_stock_v2", JSON.stringify(DEFAULT_MENU_ITEMS));
     }
 
+    // Ensure daily opening stock is established for today
+    ensureOpeningStock(getLocalDateString(), initialItems);
+    setRestockEvents(getAllRestockEvents());
+
     const savedHistory = localStorage.getItem("slippro_transactions_v1");
     if (savedHistory) {
       try {
-        setTransactions(JSON.parse(savedHistory));
-      } catch (e) {}
+        const parsed = JSON.parse(savedHistory);
+        if (Array.isArray(parsed)) {
+          setTransactions(parsed);
+        } else {
+          setTransactions([]);
+        }
+      } catch (e) {
+        setTransactions([]);
+      }
     }
 
     const savedShopProfile = localStorage.getItem("slippro_shop_profile_v1");
     if (savedShopProfile) {
       try {
-        setShopProfile(JSON.parse(savedShopProfile));
+        const parsed = JSON.parse(savedShopProfile);
+        if (parsed && typeof parsed === "object") {
+          setShopProfile(parsed);
+        }
       } catch (e) {}
     } else {
       const defaultProfile = {
@@ -555,8 +658,15 @@ export default function App() {
     const savedCustomShopping = localStorage.getItem("slippro_custom_shopping_v1");
     if (savedCustomShopping) {
       try {
-        setCustomShoppingList(JSON.parse(savedCustomShopping));
-      } catch (e) {}
+        const parsed = JSON.parse(savedCustomShopping);
+        if (Array.isArray(parsed)) {
+          setCustomShoppingList(parsed);
+        } else {
+          setCustomShoppingList([]);
+        }
+      } catch (e) {
+        setCustomShoppingList([]);
+      }
     }
 
     const savedSlip = localStorage.getItem("slippro_current_slip_v1");
@@ -568,10 +678,60 @@ export default function App() {
   // Helper translations
   const t = TRANSLATIONS[lang];
 
-  // Restock handler
+  // Quick Restock handler for single item
+  const handleQuickRestockConfirm = (itemId: string, amount: number) => {
+    const item = menuItems.find(i => i.id === itemId);
+    if (!item) return;
+
+    const prev = item.currentStock;
+    const newStock = prev + amount;
+
+    const updated = menuItems.map(i => {
+      if (i.id === itemId) {
+        return { ...i, currentStock: newStock };
+      }
+      return i;
+    });
+
+    setMenuItems(updated);
+    localStorage.setItem("slippro_stock_v2", JSON.stringify(updated));
+
+    const newEv = addRestockEvent({
+      itemId: item.id,
+      itemNameTH: item.nameTH,
+      itemNameEN: item.nameEN,
+      image: item.image,
+      amount: amount,
+      previousStock: prev,
+      newStock: newStock,
+      date: getLocalDateString(),
+      time: getLocalTimeString(),
+    });
+
+    setRestockEvents(prevEvents => [newEv, ...prevEvents]);
+    triggerToast(lang === "th" ? `เติมสต็อก ${item.nameTH} +${amount} สำเร็จ!` : `Restocked ${item.nameEN} +${amount}!`);
+  };
+
+  // Restock all handler
   const handleRestock = () => {
     setMenuItems(DEFAULT_MENU_ITEMS);
     localStorage.setItem("slippro_stock_v2", JSON.stringify(DEFAULT_MENU_ITEMS));
+    DEFAULT_MENU_ITEMS.forEach(it => {
+      if (it.trackStock) {
+        addRestockEvent({
+          itemId: it.id,
+          itemNameTH: it.nameTH,
+          itemNameEN: it.nameEN,
+          image: it.image,
+          amount: it.currentStock,
+          previousStock: 0,
+          newStock: it.currentStock,
+          date: getLocalDateString(),
+          time: getLocalTimeString(),
+        });
+      }
+    });
+    setRestockEvents(getAllRestockEvents());
     triggerToast(t.resetStockSuccess);
   };
 
@@ -751,14 +911,15 @@ export default function App() {
   // Decrease cart quantity
   const handleDecreaseQuantity = (itemId: string) => {
     setCart(prevCart => {
-      const existing = prevCart.find(c => c.menuItem.id === itemId);
-      if (!existing) return prevCart;
+      const safeCart = Array.isArray(prevCart) ? prevCart : [];
+      const existing = safeCart.find(c => c && c.menuItem && c.menuItem.id === itemId);
+      if (!existing) return safeCart;
 
       if (existing.quantity <= 1) {
-        return prevCart.filter(c => c.menuItem.id !== itemId);
+        return safeCart.filter(c => c && c.menuItem && c.menuItem.id !== itemId);
       } else {
-        return prevCart.map(c => 
-          c.menuItem.id === itemId 
+        return safeCart.map(c => 
+          c && c.menuItem && c.menuItem.id === itemId 
             ? { ...c, quantity: c.quantity - 1 } 
             : c
         );
@@ -882,7 +1043,7 @@ export default function App() {
     setShowConfirmModal(true);
   };
 
-  // Confirm stock deduction and share to LINE
+  // Confirm stock deduction and finish sale (No forced LINE redirect)
   const confirmAndSend = () => {
     setShowConfirmModal(false);
     if (!paymentMethod) {
@@ -917,46 +1078,18 @@ export default function App() {
       }
     });
 
-    // 3. Format the transaction message
-    const timestampStr = new Date().toLocaleTimeString(lang === "en" ? "en-US" : "th-TH", {
-      hour: "2-digit",
-      minute: "2-digit"
-    });
-    const dateStr = new Date().toLocaleDateString(lang === "en" ? "en-US" : "th-TH", {
-      month: "short",
-      day: "numeric",
-      year: "numeric"
-    });
-
+    const now = new Date();
+    const currentDateStr = getLocalDateString(now);
+    const currentTimeStr = getLocalTimeString(now);
     const chosenPayment = paymentMethod;
-    const paymentText = chosenPayment === "เงินสด" ? "💵 เงินสด (Cash)" : "📲 เงินโอน (Bank Transfer)";
 
-    let message = `🚀 --- SlipPro Sale Order ---\n`;
-    message += `🏪 Shop: ${shopProfile.name}\n`;
-    message += `📅 Date: ${dateStr} | ⏰ Time: ${timestampStr}\n`;
-    message += `💳 Payment: ${paymentText}\n`;
-    message += `-------------------------\n`;
-    
-    cart.forEach(c => {
-      const itemTitle = lang === "en" ? c.menuItem.nameEN : c.menuItem.nameTH;
-      message += `• ${itemTitle} x ${c.quantity} = ฿${c.menuItem.price * c.quantity}\n`;
-    });
-    
-    message += `-------------------------\n`;
-    message += `💰 TOTAL: ฿${cartTotal}\n`;
-    message += `🧾 Slip Status: ${capturedSlip ? "✅ Attached / แนบสลิปแล้ว" : (chosenPayment === "เงินโอน" ? "📲 Transfer (No Slip attached)" : "💵 Cash Payment")}\n`;
-
-    if (lowStockAlerts.length > 0) {
-      message += `\n${t.lowStockAlertText}\n`;
-      lowStockAlerts.forEach(alert => {
-        message += `- ${alert}\n`;
-      });
-    }
-
-    // 4. Save to transactions local storage
+    // 3. Save to transactions local storage
     const newTransaction: Transaction = {
       id: "txn_" + Date.now(),
-      timestamp: `${dateStr} @ ${timestampStr}`,
+      timestamp: `${currentDateStr} @ ${currentTimeStr}`,
+      date: currentDateStr,
+      time: currentTimeStr,
+      rawTimestamp: Date.now(),
       items: cart.map(c => ({
         nameEN: c.menuItem.nameEN,
         nameTH: c.menuItem.nameTH,
@@ -973,32 +1106,7 @@ export default function App() {
     setTransactions(updatedTransactions);
     localStorage.setItem("slippro_transactions_v1", JSON.stringify(updatedTransactions));
 
-    // 5. Universal LINE share link
-    const lineShareUrl = `https://line.me/R/share?text=${encodeURIComponent(message)}`;
-
-    // Auto-copy order details to clipboard for instant pasting anywhere
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(message).catch(() => {});
-    }
-
-    // Synchronous window open attempt directly in user gesture
-    try {
-      window.open(lineShareUrl, "_blank");
-    } catch (e) {
-      console.warn("Direct window.open blocked by browser:", e);
-    }
-
-    // Open LINE sharing confirmation modal
-    setLineOrderModal({
-      isOpen: true,
-      message,
-      shareUrl: lineShareUrl,
-      paymentMethod: chosenPayment,
-      total: cartTotal,
-      hasSlip: !!capturedSlip
-    });
-
-    // Clear cart and slip
+    // 4. Clear cart and slip
     setCart([]);
     setCapturedSlip(null);
     setPaymentMethod(null);
@@ -1008,34 +1116,54 @@ export default function App() {
       fileInputRef.current.value = "";
     }
 
+    // Switch back to register view immediately for fast checkout flow
+    setActiveTab("register");
     triggerToast(t.saleSuccessToast);
   };
 
   const handleResendToLine = (tx: Transaction) => {
-    const paymentText = (tx.paymentMethod === "เงินโอน" || (!tx.paymentMethod && tx.slipThumbnail))
-      ? "📲 เงินโอน (Bank Transfer)"
-      : "💵 เงินสด (Cash)";
+    const isThai = lang === "th";
+    const paymentText = tx.paymentMethod === "เงินโอน"
+      ? (isThai ? "เงินโอน" : "Bank Transfer")
+      : (isThai ? "เงินสด" : "Cash");
 
-    let message = `🚀 --- SlipPro Sale Order (Resend) ---\n`;
-    message += `🏪 Shop: ${shopProfile.name}\n`;
-    message += `📅 Date/Time: ${tx.timestamp}\n`;
-    message += `💳 Payment: ${paymentText}\n`;
-    message += `-------------------------\n`;
-    
-    tx.items.forEach(c => {
-      const itemTitle = lang === "en" ? c.nameEN : c.nameTH;
-      message += `• ${itemTitle} x ${c.quantity} = ฿${c.price * c.quantity}\n`;
-    });
-    
-    message += `-------------------------\n`;
-    message += `💰 TOTAL: ฿${tx.total}\n`;
-    message += `🧾 Slip Status: ${tx.slipThumbnail ? "✅ Attached / แนบแล้ว" : "❌ Not Attached / ไม่พบสลิป"}\n`;
-
-    if (tx.lowStockAlerts && tx.lowStockAlerts.length > 0) {
-      message += `\n${t.lowStockAlertText}\n`;
-      tx.lowStockAlerts.forEach(alert => {
-        message += `- ${alert}\n`;
+    let message = "";
+    if (isThai) {
+      message = `รายการขายสินค้า\n`;
+      message += `ร้านค้า: ${shopProfile.name}\n`;
+      message += `วันเวลา: ${tx.timestamp}\n`;
+      message += `การชำระเงิน: ${paymentText}\n`;
+      message += `-------------------------\n`;
+      tx.items.forEach(c => {
+        message += `• ${c.nameTH || c.nameEN} x ${c.quantity} = ฿${c.price * c.quantity}\n`;
       });
+      message += `-------------------------\n`;
+      message += `ยอดรวมทั้งสิ้น: ฿${tx.total}\n`;
+      message += `สถานะสลิป: ${tx.slipThumbnail ? "แนบสลิปเรียบร้อย" : (tx.paymentMethod === "เงินโอน" ? "เงินโอน (ไม่ได้แนบสลิป)" : "ชำระเงินสด")}\n`;
+      if (tx.lowStockAlerts && tx.lowStockAlerts.length > 0) {
+        message += `\nแจ้งเตือนสินค้าใกล้หมด:\n`;
+        tx.lowStockAlerts.forEach(alert => {
+          message += `- ${alert}\n`;
+        });
+      }
+    } else {
+      message = `--- SlipPro Sale Order ---\n`;
+      message += `Shop: ${shopProfile.name}\n`;
+      message += `Date/Time: ${tx.timestamp}\n`;
+      message += `Payment: ${paymentText}\n`;
+      message += `-------------------------\n`;
+      tx.items.forEach(c => {
+        message += `• ${c.nameEN || c.nameTH} x ${c.quantity} = ฿${c.price * c.quantity}\n`;
+      });
+      message += `-------------------------\n`;
+      message += `TOTAL: ฿${tx.total}\n`;
+      message += `Slip Status: ${tx.slipThumbnail ? "Attached" : (tx.paymentMethod === "เงินโอน" ? "Transfer (No Slip)" : "Cash Payment")}\n`;
+      if (tx.lowStockAlerts && tx.lowStockAlerts.length > 0) {
+        message += `\n${t.lowStockAlertText}\n`;
+        tx.lowStockAlerts.forEach(alert => {
+          message += `- ${alert}\n`;
+        });
+      }
     }
 
     const lineShareUrl = `https://line.me/R/share?text=${encodeURIComponent(message)}`;
@@ -1123,12 +1251,16 @@ export default function App() {
   };
 
   const handleDeleteMenuItem = (itemId: string) => {
-    const updated = menuItems.filter(item => item.id !== itemId);
+    const safeMenuItems = Array.isArray(menuItems) ? menuItems : [];
+    const updated = safeMenuItems.filter(item => item && item.id !== itemId);
     setMenuItems(updated);
     localStorage.setItem("slippro_stock_v2", JSON.stringify(updated));
     
     // Clean from active cart
-    setCart(prev => prev.filter(c => c.menuItem.id !== itemId));
+    setCart(prev => {
+      const safeCart = Array.isArray(prev) ? prev : [];
+      return safeCart.filter(c => c && c.menuItem && c.menuItem.id !== itemId);
+    });
     
     triggerToast("Item deleted successfully!");
     setEditingItem(null);
@@ -1143,14 +1275,16 @@ export default function App() {
   const handleAddCustomShoppingItem = (e: React.FormEvent) => {
     e.preventDefault();
     if (!customShoppingItem.trim()) return;
-    const updated = [...customShoppingList, customShoppingItem.trim()];
+    const safeList = Array.isArray(customShoppingList) ? customShoppingList : [];
+    const updated = [...safeList, customShoppingItem.trim()];
     setCustomShoppingList(updated);
     localStorage.setItem("slippro_custom_shopping_v1", JSON.stringify(updated));
     setCustomShoppingItem("");
   };
 
   const handleRemoveCustomShoppingItem = (index: number) => {
-    const updated = customShoppingList.filter((_, i) => i !== index);
+    const safeList = Array.isArray(customShoppingList) ? customShoppingList : [];
+    const updated = safeList.filter((_, i) => i !== index);
     setCustomShoppingList(updated);
     localStorage.setItem("slippro_custom_shopping_v1", JSON.stringify(updated));
   };
@@ -1166,147 +1300,166 @@ export default function App() {
     triggerToast(t.shiftClearedToast);
   };
 
-  const handleDownloadPdf = () => {
+  // Date shift helper
+  const handleShiftDate = (days: number) => {
+    const [y, m, d] = selectedReportDate.split("-").map(Number);
+    const dt = new Date(y, m - 1, d);
+    dt.setDate(dt.getDate() + days);
+    setSelectedReportDate(getLocalDateString(dt));
+  };
+
+  const formatDisplayDate = (dateStr: string) => {
+    try {
+      const [y, m, d] = dateStr.split("-").map(Number);
+      const dt = new Date(y, m - 1, d);
+      return dt.toLocaleDateString(lang === "en" ? "en-US" : "th-TH", {
+        weekday: "short",
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      });
+    } catch (e) {
+      return dateStr;
+    }
+  };
+
+  // Selected date data aggregations
+  const safeTransactions = Array.isArray(transactions) ? transactions : [];
+  const safeRestockEvents = Array.isArray(restockEvents) ? restockEvents : [];
+  const safeMenuItems = Array.isArray(menuItems) ? menuItems : [];
+
+  const dayTx = safeTransactions.filter(tx => {
+    if (!tx) return false;
+    if (tx.date) return tx.date === selectedReportDate;
+    const txDate = tx.timestamp ? tx.timestamp.split(" @ ")[0] : "";
+    return txDate === selectedReportDate || (typeof tx.timestamp === "string" && tx.timestamp.includes(selectedReportDate));
+  });
+
+  const dayRestocks = safeRestockEvents.filter(r => r && r.date === selectedReportDate);
+
+  const cashTx = dayTx.filter(tx => tx && tx.paymentMethod === "เงินสด");
+  const cashTotal = cashTx.reduce((sum, tx) => sum + (tx.total || 0), 0);
+  const transferTx = dayTx.filter(tx => tx && tx.paymentMethod === "เงินโอน");
+  const transferTotal = transferTx.reduce((sum, tx) => sum + (tx.total || 0), 0);
+  const totalEarnings = cashTotal + transferTotal;
+  const totalOrders = dayTx.length;
+  const totalRestockedUnits = dayRestocks.reduce((sum, r) => sum + (r.amount || 0), 0);
+  const totalRestockEventsCount = dayRestocks.length;
+
+  // Itemized sales for Cake Chart
+  const itemizedMap: { [key: string]: { name: string; image: string; quantity: number; total: number } } = {};
+  dayTx.forEach(tx => {
+    (Array.isArray(tx?.items) ? tx.items : []).forEach(it => {
+      if (!it) return;
+      const name = lang === "en" ? (it.nameEN || it.nameTH || "") : (it.nameTH || it.nameEN || "");
+      const key = it.nameEN || it.nameTH || "item";
+      const menuItemMatch = safeMenuItems.find(m => m && (m.nameEN === it.nameEN || m.nameTH === it.nameTH));
+      const img = menuItemMatch?.image || "📦";
+      if (!itemizedMap[key]) {
+        itemizedMap[key] = { name, image: img, quantity: 0, total: 0 };
+      }
+      itemizedMap[key].quantity += (it.quantity || 0);
+      itemizedMap[key].total += ((it.price || 0) * (it.quantity || 0));
+    });
+  });
+  const daySalesItemized = Object.values(itemizedMap).sort((a, b) => b.quantity - a.quantity);
+  const totalSoldUnits = daySalesItemized.reduce((sum, it) => sum + it.quantity, 0);
+
+  const cakeSlices: CakeChartSlice[] = daySalesItemized.map((it, idx) => ({
+    name: it.name,
+    image: it.image,
+    quantity: it.quantity,
+    revenue: it.total,
+    color: CAKE_PALETTE[idx % CAKE_PALETTE.length],
+    percentage: totalSoldUnits > 0 ? Math.round((it.quantity / totalSoldUnits) * 100) : 0,
+  }));
+
+  // Daily Stock Balance Rows
+  const openingMap = getOpeningStockForDate(selectedReportDate) || {};
+  const allSoldItems = dayTx.flatMap(tx => (Array.isArray(tx?.items) ? tx.items : []));
+  const dailyStockRows: DailyStockRow[] = safeMenuItems
+    .filter(m => m && m.trackStock)
+    .map(item => {
+      const openingStock = openingMap[item.id] !== undefined ? openingMap[item.id] : item.currentStock;
+      const restocked = (dayRestocks || [])
+        .filter(r => r && r.itemId === item.id)
+        .reduce((sum, r) => sum + (r.amount || 0), 0);
+      const sold = allSoldItems
+        .filter(it => it && (it.nameEN === item.nameEN || it.nameTH === item.nameTH))
+        .reduce((sum, it) => sum + (it.quantity || 0), 0);
+      const closingStock = selectedReportDate === getLocalDateString()
+        ? item.currentStock
+        : Math.max(0, openingStock + restocked - sold);
+
+      return {
+        itemId: item.id,
+        itemName: lang === "en" ? item.nameEN : item.nameTH,
+        image: item.image,
+        openingStock,
+        restocked,
+        sold,
+        closingStock,
+      };
+    });
+
+  // Daily Timeline Events
+  const timelineSales: TimelineEvent[] = dayTx.map(tx => {
+    const timeStr = tx.time || (typeof tx.timestamp === "string" && tx.timestamp.includes(" @ ") ? tx.timestamp.split(" @ ")[1] : (tx.timestamp || ""));
+    return {
+      type: "sale",
+      id: tx.id,
+      time: timeStr,
+      rawTimestamp: tx.rawTimestamp || (tx.id?.startsWith("txn_") ? parseInt(tx.id.replace("txn_", "")) : 0),
+      paymentMethod: tx.paymentMethod || "เงินสด",
+      total: tx.total || 0,
+      items: Array.isArray(tx.items) ? tx.items : [],
+      hasSlip: !!tx.slipThumbnail,
+    };
+  });
+
+  const timelineRestocks: TimelineEvent[] = dayRestocks.map(r => ({
+    type: "restock",
+    id: r.id,
+    time: r.time,
+    rawTimestamp: r.rawTimestamp,
+    event: r,
+  }));
+
+  const dayTimelineEvents: TimelineEvent[] = [...timelineSales, ...timelineRestocks].sort(
+    (a, b) => (b.rawTimestamp || 0) - (a.rawTimestamp || 0)
+  );
+
+  const handleDownloadPdf = async () => {
     if (isDownloadingPdf) return;
     setIsDownloadingPdf(true);
 
-    const todayDate = new Date().toLocaleDateString(lang === "en" ? "en-US" : "th-TH", {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric"
-    });
-
-    const totalCash = transactions.reduce((sum, tx) => sum + tx.total, 0);
-
-    const itemized: { [key: string]: { nameEN: string; nameTH: string; quantity: number; total: number; image: string } } = {};
-    transactions.forEach(tx => {
-      tx.items.forEach(item => {
-        const key = item.nameEN;
-        const menuItem = menuItems.find(m => m.nameEN === item.nameEN);
-        const image = menuItem?.image || "📦";
-        if (!itemized[key]) {
-          itemized[key] = {
-            nameEN: item.nameEN,
-            nameTH: item.nameTH,
-            quantity: 0,
-            total: 0,
-            image
-          };
-        }
-        itemized[key].quantity += item.quantity;
-        itemized[key].total += item.price * item.quantity;
-      });
-    });
-    const itemizedList = Object.values(itemized).sort((a, b) => b.total - a.total);
-
-    const itemizedHTML = itemizedList.length > 0 
-      ? itemizedList.map(item => `
-          <tr style="border-bottom: 1px solid #f1f5f9;">
-            <td style="padding: 10px 8px; font-size: 13px;">${item.image} ${lang === "en" ? item.nameEN : item.nameTH}</td>
-            <td style="padding: 10px 8px; text-align: center; font-size: 13px; font-family: monospace;">${item.quantity}</td>
-            <td style="padding: 10px 8px; text-align: right; font-size: 13px; font-family: monospace;">฿${item.total}</td>
-          </tr>
-        `).join("")
-      : `<tr><td colspan="3" style="text-align: center; padding: 24px; color: #94a3b8; font-style: italic; font-size: 13px;">${t.noSalesToday}</td></tr>`;
-
-    const lowStockItems = menuItems.filter(item => item.trackStock && item.currentStock < item.lowStockThreshold);
-    const hasShopping = lowStockItems.length > 0 || customShoppingList.length > 0;
-    
-    const shoppingHTML = hasShopping
-      ? `
-        <div style="margin-top: 30px; border-top: 2px solid #0f172a; padding-top: 20px;">
-          <h3 style="font-size: 16px; font-weight: 800; color: #0f172a; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.05em;">🛒 ${lang === "en" ? "Shopping & Procurement List" : "รายการจัดเตรียมวัตถุดิบซื้อของ"}</h3>
-          <ul style="padding-left: 20px; margin: 0; space-y: 8px;">
-            ${lowStockItems.map(item => `
-              <li style="font-size: 13px; color: #dc2626; margin-bottom: 8px; font-weight: 500;">
-                <strong>[${lang === 'en' ? 'LOW STOCK' : 'คลังเหลือน้อย'}]</strong> ${item.image} ${lang === "en" ? item.nameEN : item.nameTH} - ${lang === 'en' ? 'Stock' : 'คงเหลือ'}: ${item.currentStock} (Threshold: ${item.lowStockThreshold})
-              </li>
-            `).join("")}
-            ${customShoppingList.map(item => `
-              <li style="font-size: 13px; color: #334155; margin-bottom: 8px; font-weight: 500;">
-                <strong>[${lang === 'en' ? 'CUSTOM' : 'เพิ่มเติม'}]</strong> ${item}
-              </li>
-            `).join("")}
-          </ul>
-        </div>
-      `
-      : "";
-
-    const element = document.createElement("div");
-    element.innerHTML = `
-      <div style="font-family: system-ui, -apple-system, sans-serif; padding: 32px; background-color: #ffffff; color: #0f172a; line-height: 1.5; max-width: 800px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px;">
-        <!-- Header Info -->
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #0f172a; padding-bottom: 20px; margin-bottom: 24px;">
-          <div>
-            <h1 style="font-size: 28px; font-weight: 900; color: #0f172a; margin: 0; letter-spacing: -0.03em; text-transform: uppercase;">${shopProfile.name}</h1>
-            <p style="font-size: 13px; color: #475569; margin: 6px 0 0 0; max-width: 400px; font-weight: 500;">📍 ${shopProfile.address}</p>
-          </div>
-          <div style="text-align: right;">
-            <div style="display: inline-block; background-color: #0f172a; color: #ffffff; padding: 6px 14px; border-radius: 9999px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Z-REPORT</div>
-            <p style="font-size: 12px; color: #334155; margin: 0; font-weight: 700; font-family: monospace;">${todayDate}</p>
-          </div>
-        </div>
-
-        <!-- Metrics Grid -->
-        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 30px;">
-          <div style="border: 1px solid #cbd5e1; padding: 16px; border-radius: 12px; text-align: center; background-color: #f8fafc; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
-            <span style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.05em;">${lang === "en" ? "TOTAL TRANSACTIONS" : "จำนวนบิลขาย"}</span>
-            <p style="font-size: 26px; font-weight: 900; color: #0f172a; margin: 6px 0 0 0; font-family: monospace;">${transactions.length}</p>
-          </div>
-          <div style="border: 1px solid #cbd5e1; padding: 16px; border-radius: 12px; text-align: center; background-color: #f8fafc; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
-            <span style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.05em;">${lang === "en" ? "TOTAL CASH REVENUE" : "ยอดขายเงินสดทั้งหมด"}</span>
-            <p style="font-size: 26px; font-weight: 900; color: #10b981; margin: 6px 0 0 0; font-family: monospace;">฿${totalCash}</p>
-          </div>
-        </div>
-
-        <!-- Sales Itemized -->
-        <div style="margin-bottom: 24px;">
-          <h3 style="font-size: 16px; font-weight: 800; color: #0f172a; margin-top: 0; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">📊 ${lang === "en" ? "Itemized Sales Summary" : "สรุปรายการขายแยกประเภท"}</h3>
-          <table style="width: 100%; border-collapse: collapse; text-align: left;">
-            <thead>
-              <tr style="border-bottom: 2px solid #0f172a; text-transform: uppercase; font-size: 11px; font-weight: 800; color: #475569;">
-                <th style="padding: 8px; text-align: left;">${lang === "en" ? "Menu Item" : "เมนูสินค้า"}</th>
-                <th style="padding: 8px; text-align: center; width: 100px;">${lang === "en" ? "Qty Sold" : "จำนวนขาย"}</th>
-                <th style="padding: 8px; text-align: right; width: 140px;">${lang === "en" ? "Revenue" : "ยอดขาย"}</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${itemizedHTML}
-            </tbody>
-          </table>
-        </div>
-
-        <!-- Procurement / Shopping Section -->
-        ${shoppingHTML}
-
-        <!-- Footer watermark -->
-        <div style="margin-top: 40px; border-top: 1px dashed #cbd5e1; padding-top: 16px; text-align: center;">
-          <p style="font-size: 10px; color: #94a3b8; margin: 0; font-weight: 500;">Report generated automatically by <strong>SlipPro POS</strong> on ${new Date().toLocaleTimeString(lang === 'en' ? 'en-US' : 'th-TH')}</p>
-        </div>
-      </div>
-    `;
-
-    const opt = {
-      margin:       [0.4, 0.4, 0.4, 0.4] as [number, number, number, number],
-      filename:     `slippro-zreport-${new Date().toISOString().slice(0, 10)}.pdf`,
-      image:        { type: 'jpeg' as const, quality: 0.98 },
-      html2canvas:  { scale: 2, useCORS: true, letterRendering: true },
-      jsPDF:        { unit: 'in' as const, format: 'letter' as const, orientation: 'portrait' as const }
-    };
-
     try {
-      html2pdf().from(element).set(opt).save().then(() => {
-        setIsDownloadingPdf(false);
-        triggerToast(lang === "en" ? "PDF Report Downloaded!" : "ดาวน์โหลดรายงานสำเร็จ!");
-      }).catch((err: any) => {
-        console.error("PDF generation failed: ", err);
-        setIsDownloadingPdf(false);
-        triggerToast("PDF Export failed");
+      await generateDailyPdfReport({
+        dateStr: selectedReportDate,
+        formattedDate: formatDisplayDate(selectedReportDate),
+        shopProfile,
+        cashTotal,
+        cashCount: cashTx.length,
+        transferTotal,
+        transferCount: transferTx.length,
+        totalEarnings,
+        totalOrders,
+        totalRestockedUnits,
+        totalRestockEvents: totalRestockEventsCount,
+        cakeSlices,
+        totalSoldUnits,
+        stockRows: dailyStockRows,
+        timelineEvents: dayTimelineEvents,
+        customShoppingList,
+        menuItems,
+        lang,
       });
-    } catch (error) {
+      triggerToast(lang === "en" ? "PDF Report Downloaded!" : "ดาวน์โหลดรายงานสำเร็จ!");
+    } catch (e) {
+      console.error("PDF generation failed: ", e);
+      triggerToast(lang === "en" ? "PDF Export failed" : "การสร้าง PDF ผิดพลาด");
+    } finally {
       setIsDownloadingPdf(false);
-      triggerToast("PDF library error");
     }
   };
 
@@ -1417,7 +1570,7 @@ export default function App() {
     }
   };
 
-  const lowStockMenuItems = menuItems.filter(item => item.trackStock && item.currentStock < item.lowStockThreshold);
+  const lowStockMenuItems = (Array.isArray(menuItems) ? menuItems : []).filter(item => item.trackStock && item.currentStock < item.lowStockThreshold);
   const lowStockItemsCount = lowStockMenuItems.length;
 
   return (
@@ -1624,9 +1777,9 @@ export default function App() {
               {/* Header with back button */}
               <div className="w-full p-4 flex items-center justify-between bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm">
                 <button onClick={() => setActiveTab("register")} className="flex items-center gap-1 text-slate-600 hover:text-slate-900 font-bold text-xs uppercase cursor-pointer">
-                  <ChevronLeft className="w-4 h-4" /> Back
+                  <ChevronLeft className="w-4 h-4" /> {lang === "th" ? "ย้อนกลับ" : "Back"}
                 </button>
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-900">Checkout</span>
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-900">{lang === "th" ? "ชำระเงิน" : "Checkout"}</span>
                 <div className="w-10"></div>
               </div>
 
@@ -1639,7 +1792,7 @@ export default function App() {
                         {t.cartTitle}
                       </h3>
                       <span id="cart-count" className="text-[10px] bg-slate-200 text-slate-800 px-2 py-0.5 rounded-full font-mono font-bold">
-                        {cart.reduce((acc, curr) => acc + curr.quantity, 0)} {t.items.toUpperCase()}
+                        {cart.reduce((acc, curr) => acc + curr.quantity, 0)} {t.items}
                       </span>
                     </div>
 
@@ -1889,8 +2042,10 @@ export default function App() {
                     >
                       <span className="text-3xl">💵</span>
                       <div className="text-center">
-                        <span className="block text-sm font-black tracking-tight">เงินสด</span>
-                        <span className="block text-[10px] font-bold text-slate-500 uppercase mt-0.5">Cash</span>
+                        <span className="block text-sm font-black tracking-tight">{lang === "th" ? "เงินสด" : "Cash"}</span>
+                        {lang === "en" && (
+                          <span className="block text-[10px] font-bold text-slate-500 uppercase mt-0.5">Cash</span>
+                        )}
                       </div>
                       {paymentMethod === "เงินสด" ? (
                         <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-white px-2 py-0.5 rounded-full border border-emerald-200">
@@ -1917,8 +2072,10 @@ export default function App() {
                     >
                       <span className="text-3xl">📲</span>
                       <div className="text-center">
-                        <span className="block text-sm font-black tracking-tight">เงินโอน</span>
-                        <span className="block text-[10px] font-bold text-slate-500 uppercase mt-0.5">Transfer</span>
+                        <span className="block text-sm font-black tracking-tight">{lang === "th" ? "เงินโอน" : "Transfer"}</span>
+                        {lang === "en" && (
+                          <span className="block text-[10px] font-bold text-slate-500 uppercase mt-0.5">Transfer</span>
+                        )}
                       </div>
                       {paymentMethod === "เงินโอน" ? (
                         <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 bg-white px-2 py-0.5 rounded-full border border-blue-200">
@@ -1951,7 +2108,7 @@ export default function App() {
                         {t.transactionHistory}
                       </h2>
                       <p className="text-[10px] text-slate-300 font-semibold uppercase font-mono mt-0.5">
-                        {transactions.length} LOGS
+                        {transactions.length} {lang === "th" ? "รายการ" : "LOGS"}
                       </p>
                     </div>
                   </div>
@@ -1980,7 +2137,7 @@ export default function App() {
                                   ? "bg-blue-50 text-blue-700 border-blue-200"
                                   : "bg-emerald-50 text-emerald-700 border-emerald-200"
                               }`}>
-                                {isTransfer ? "📲 เงินโอน (Transfer)" : "💵 เงินสด (Cash)"}
+                                {isTransfer ? (lang === "th" ? "📲 เงินโอน" : "📲 Transfer") : (lang === "th" ? "💵 เงินสด" : "💵 Cash")}
                               </span>
                             </div>
                             <span className="text-sm font-mono font-black text-slate-900 bg-slate-100 text-slate-900 px-2.5 py-1 rounded-lg border border-slate-200">
@@ -2026,14 +2183,14 @@ export default function App() {
                               )}
                             </div>
 
-                            {/* Quick Send to LINE Button */}
+                            {/* Share to LINE Button */}
                             <button
                               type="button"
                               id={`resend-line-${tx.id}`}
                               onClick={() => handleResendToLine(tx)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#06C755]/10 hover:bg-[#06C755]/20 text-[#06C755] font-black text-[10px] cursor-pointer transition-colors"
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white font-bold text-[11px] cursor-pointer shadow-sm shadow-[#06C755]/20 transition-all active:scale-95"
                             >
-                              <ExternalLink className="w-3 h-3 stroke-[2.5]" />
+                              <ExternalLink className="w-3.5 h-3.5 stroke-[2.5]" />
                               <span>{t.resendToLine}</span>
                             </button>
                           </div>
@@ -2044,7 +2201,7 @@ export default function App() {
                               <details className="cursor-pointer group bg-slate-50 rounded-xl p-2.5 border border-slate-200/60 hover:border-slate-300 transition-colors">
                                 <summary className="text-[10px] text-slate-600 hover:text-slate-900 flex items-center gap-1.5 select-none font-bold uppercase tracking-wider">
                                   <ImageIcon className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600" />
-                                  <span>View Captured Slip</span>
+                                  <span>{lang === "th" ? "ดูรูปภาพสลิปที่แนบ" : "View Captured Slip"}</span>
                                 </summary>
                                 <div 
                                   className="mt-3 rounded-xl overflow-hidden bg-white max-w-[240px] shadow-sm border border-slate-200 cursor-zoom-in group/history-img relative"
@@ -2059,7 +2216,7 @@ export default function App() {
                                   <div className="absolute inset-0 bg-black/0 group-hover/history-img:bg-black/20 transition-colors flex items-center justify-center">
                                     <span className="text-white text-xs font-bold bg-black/60 px-2 py-1 rounded-lg opacity-0 group-hover/history-img:opacity-100 transition-opacity flex items-center gap-1">
                                       <ImageIcon className="w-3 h-3" />
-                                      <span>View</span>
+                                      <span>{lang === "th" ? "ดูภาพ" : "View"}</span>
                                     </span>
                                   </div>
                                 </div>
@@ -2076,149 +2233,286 @@ export default function App() {
 
 
 
-          {activeTab === "zreport" && (() => {
-            const totalCash = transactions.reduce((sum, tx) => sum + tx.total, 0);
+          {activeTab === "zreport" && (
+            <div className="space-y-6">
+              {/* Date Navigation Bar */}
+              <div className="bg-white border border-slate-200/80 rounded-2xl p-3 shadow-sm flex items-center justify-between gap-2">
+                <button
+                  id="prev-date-btn"
+                  onClick={() => handleShiftDate(-1)}
+                  className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all cursor-pointer active:scale-95 flex items-center justify-center"
+                  title={lang === "th" ? "วันก่อนหน้า" : "Previous Day"}
+                >
+                  <ChevronLeft className="w-4 h-4 stroke-[2.5]" />
+                </button>
 
-            const itemized: { [key: string]: { nameEN: string; nameTH: string; quantity: number; total: number; image: string } } = {};
-            transactions.forEach(tx => {
-              tx.items.forEach(item => {
-                const key = item.nameEN;
-                const menuItem = menuItems.find(m => m.nameEN === item.nameEN);
-                const image = menuItem?.image || "📦";
-                if (!itemized[key]) {
-                  itemized[key] = {
-                    nameEN: item.nameEN,
-                    nameTH: item.nameTH,
-                    quantity: 0,
-                    total: 0,
-                    image
-                  };
-                }
-                itemized[key].quantity += item.quantity;
-                itemized[key].total += item.price * item.quantity;
-              });
-            });
-            const itemizedList = Object.values(itemized).sort((a, b) => b.total - a.total);
-
-            return (
-              <div className="space-y-6">
-                {/* Z-Report Cover Header */}
-                <div className="bg-slate-900 text-white rounded-3xl p-5 shadow-lg relative overflow-hidden">
-                  <div className="absolute right-0 top-0 translate-x-3 -translate-y-3 w-32 h-32 bg-slate-800/60 rounded-full pointer-events-none"></div>
-                  <div className="flex justify-between items-start">
-                    <div className="space-y-1">
-                      <span className="inline-block bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest">
-                        {t.zReportTitle.split(" (")[0]}
-                      </span>
-                      <h3 className="text-lg font-black tracking-tight">{shopProfile.name}</h3>
-                      <p className="text-[10px] text-slate-400 font-medium line-clamp-1">📍 {shopProfile.address}</p>
-                    </div>
+                <div className="flex-1 flex items-center justify-center gap-2">
+                  <div className="relative flex items-center">
+                    <Calendar className="w-4 h-4 text-slate-500 absolute left-3 pointer-events-none" />
+                    <input
+                      id="report-date-picker"
+                      type="date"
+                      value={selectedReportDate}
+                      max={getLocalDateString()}
+                      onChange={(e) => {
+                        if (e.target.value) setSelectedReportDate(e.target.value);
+                      }}
+                      className="pl-9 pr-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 text-xs font-bold font-mono focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer"
+                    />
                   </div>
-
-                  <div className="mt-4 pt-3 border-t border-slate-800 flex justify-between items-center text-[10px] text-slate-400">
-                    <div className="flex items-center gap-1.5 font-semibold">
-                      <Clock className="w-3.5 h-3.5 text-slate-500" />
-                      <span>{new Date().toLocaleDateString(lang === "en" ? "en-US" : "th-TH", { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                    </div>
-                    <span className="font-bold text-slate-300">SHIFT: ACTIVE</span>
-                  </div>
-                </div>
-
-                {/* Bento Grid Stats */}
-                <div className="grid grid-cols-2 gap-4">
-                  {/* Total Cash Stat Card */}
-                  <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-4 shadow-sm flex flex-col justify-between">
-                    <div className="space-y-1">
-                      <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block">
-                        {t.totalCash}
-                      </span>
-                      <p className="text-2xl font-black font-mono tracking-tight text-emerald-600">
-                        {t.thb}{totalCash}
-                      </p>
-                    </div>
-                    <span className="text-[8px] text-slate-400 font-semibold mt-2 block">
-                      💵 Cash Draw Summary
-                    </span>
-                  </div>
-
-                  {/* Total Transactions Stat Card */}
-                  <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-4 shadow-sm flex flex-col justify-between">
-                    <div className="space-y-1">
-                      <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block">
-                        {t.totalTransactions}
-                      </span>
-                      <p className="text-2xl font-black font-mono tracking-tight text-slate-900">
-                        {transactions.length}
-                      </p>
-                    </div>
-                    <span className="text-[8px] text-slate-400 font-semibold mt-2 block">
-                      🧾 Bills Printed Today
-                    </span>
-                  </div>
-                </div>
-
-                {/* Itemized Sales Count section */}
-                <div className="space-y-3 bg-white border border-slate-200/60 rounded-2.5xl p-4 shadow-sm">
-                  <h4 className="text-[10px] uppercase tracking-widest text-slate-400 font-black flex items-center gap-1.5 border-b border-slate-100 pb-2">
-                    <BarChart3 className="w-3.5 h-3.5 text-slate-900" />
-                    <span>{t.itemizedSales}</span>
-                  </h4>
-
-                  {itemizedList.length > 0 ? (
-                    <div className="divide-y divide-slate-100">
-                      {itemizedList.map((item, idx) => (
-                        <div key={idx} className="py-2.5 flex items-center justify-between first:pt-0 last:pb-0">
-                          <div className="flex items-center gap-2.5">
-                            <span className="text-2xl">{item.image}</span>
-                            <div>
-                              <p className="text-xs font-bold text-slate-900">
-                                {lang === "en" ? item.nameEN : item.nameTH}
-                              </p>
-                              <p className="text-[9px] text-slate-400 font-bold font-mono">
-                                {t.unitPrice}: {t.thb}{item.total / item.quantity}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="text-right font-mono">
-                            <p className="text-xs font-black text-slate-900">x{item.quantity}</p>
-                            <p className="text-[10px] font-bold text-emerald-600">{t.thb}{item.total}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="py-8 text-center bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
-                      <p className="text-xs text-slate-400 italic font-medium">{t.noSalesToday}</p>
-                    </div>
+                  {selectedReportDate !== getLocalDateString() && (
+                    <button
+                      id="jump-today-btn"
+                      onClick={() => setSelectedReportDate(getLocalDateString())}
+                      className="px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-bold transition-all cursor-pointer active:scale-95 shrink-0"
+                    >
+                      {lang === "th" ? "วันนี้" : "Today"}
+                    </button>
                   )}
                 </div>
 
-                {/* Action Buttons: PDF Download & Clear Shift */}
-                <div className="grid grid-cols-1 gap-3 pt-2">
-                  <button
-                    onClick={handleDownloadPdf}
-                    disabled={isDownloadingPdf}
-                    className={`w-full py-3.5 rounded-2xl font-black text-xs tracking-wider flex items-center justify-center gap-2 transition-all uppercase cursor-pointer shadow-md ${
-                      isDownloadingPdf 
-                        ? "bg-slate-100 border border-slate-200 text-slate-400 cursor-not-allowed" 
-                        : "bg-slate-900 hover:bg-slate-800 text-white active:scale-95 shadow-slate-900/10"
-                    }`}
-                  >
-                    <Download className={`w-4 h-4 ${isDownloadingPdf ? "animate-bounce" : ""}`} />
-                    <span>{isDownloadingPdf ? t.downloadingPdf : t.downloadPdfBtn}</span>
-                  </button>
+                <button
+                  id="next-date-btn"
+                  onClick={() => handleShiftDate(1)}
+                  disabled={selectedReportDate >= getLocalDateString()}
+                  className={`p-2 rounded-xl border transition-all flex items-center justify-center ${
+                    selectedReportDate >= getLocalDateString()
+                      ? "bg-slate-50 text-slate-300 border-slate-100 cursor-not-allowed"
+                      : "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200 cursor-pointer active:scale-95"
+                  }`}
+                  title={lang === "th" ? "วันถัดไป" : "Next Day"}
+                >
+                  <ChevronRight className="w-4 h-4 stroke-[2.5]" />
+                </button>
+              </div>
 
+              {/* Z-Report Cover Header */}
+              <div className="bg-slate-900 text-white rounded-3xl p-5 shadow-lg relative overflow-hidden">
+                <div className="absolute right-0 top-0 translate-x-3 -translate-y-3 w-32 h-32 bg-slate-800/60 rounded-full pointer-events-none"></div>
+                <div className="flex justify-between items-start">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="inline-block bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest">
+                        {t.zReportTitle.split(" (")[0]}
+                      </span>
+                      {selectedReportDate === getLocalDateString() ? (
+                        <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-2 py-0.5 rounded-full">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                          {lang === "th" ? "รอบขายวันนี้" : "Today Active"}
+                        </span>
+                      ) : (
+                        <span className="text-[9px] font-bold text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full border border-slate-700">
+                          {lang === "th" ? "ข้อมูลย้อนหลัง" : "Archived Record"}
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="text-lg font-black tracking-tight">{shopProfile.name}</h3>
+                    <p className="text-[10px] text-slate-400 font-medium line-clamp-1">📍 {shopProfile.address}</p>
+                  </div>
+                </div>
+
+                <div className="mt-4 pt-3 border-t border-slate-800 flex justify-between items-center text-[10px] text-slate-400">
+                  <div className="flex items-center gap-1.5 font-semibold">
+                    <Clock className="w-3.5 h-3.5 text-slate-500" />
+                    <span>{formatDisplayDate(selectedReportDate)}</span>
+                  </div>
+                  <span className="font-mono text-slate-300 font-bold">{selectedReportDate}</span>
+                </div>
+              </div>
+
+              {/* Financial Breakdown 4-Grid: All Money Together, Cash, Transfer, Restock */}
+              <div className="space-y-3">
+                {/* Highlighted Primary Card: All Earnings Together */}
+                <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-2xl p-5 shadow-md flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block">
+                      {t.allEarningsTogether}
+                    </span>
+                    <p className="text-3xl font-black font-mono tracking-tight text-emerald-400 mt-1">
+                      {t.thb}{totalEarnings}
+                    </p>
+                    <p className="text-[10px] text-slate-400 mt-1 font-medium">
+                      {t.totalOrders}: <span className="font-mono font-bold text-white">{totalOrders}</span> {t.items}
+                    </p>
+                  </div>
+                  <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center text-2xl shadow-inner">
+                    💰
+                  </div>
+                </div>
+
+                {/* Sub-cards: Cash, Transfer, Restock */}
+                <div className="grid grid-cols-3 gap-2.5">
+                  {/* Cash Card */}
+                  <div className="bg-white border border-slate-200/80 rounded-2xl p-3.5 shadow-sm">
+                    <div className="flex items-center gap-1 text-[10px] font-bold text-slate-500 uppercase">
+                      <span>💵</span>
+                      <span>{t.cashIncome}</span>
+                    </div>
+                    <p className="text-lg font-black font-mono text-emerald-600 mt-1.5">
+                      {t.thb}{cashTotal}
+                    </p>
+                    <p className="text-[9px] text-slate-400 font-mono mt-0.5 font-semibold">
+                      {cashTx.length} {lang === "th" ? "บิล" : "tx"}
+                    </p>
+                  </div>
+
+                  {/* Transfer Card */}
+                  <div className="bg-white border border-slate-200/80 rounded-2xl p-3.5 shadow-sm">
+                    <div className="flex items-center gap-1 text-[10px] font-bold text-slate-500 uppercase">
+                      <span>📲</span>
+                      <span>{t.transferIncome}</span>
+                    </div>
+                    <p className="text-lg font-black font-mono text-blue-600 mt-1.5">
+                      {t.thb}{transferTotal}
+                    </p>
+                    <p className="text-[9px] text-slate-400 font-mono mt-0.5 font-semibold">
+                      {transferTx.length} {lang === "th" ? "บิล" : "tx"}
+                    </p>
+                  </div>
+
+                  {/* Restock Card */}
+                  <div className="bg-white border border-slate-200/80 rounded-2xl p-3.5 shadow-sm">
+                    <div className="flex items-center gap-1 text-[10px] font-bold text-slate-500 uppercase">
+                      <span>📦</span>
+                      <span>{t.restockUnitsCount}</span>
+                    </div>
+                    <p className="text-lg font-black font-mono text-slate-900 mt-1.5">
+                      +{totalRestockedUnits}
+                    </p>
+                    <p className="text-[9px] text-slate-400 font-mono mt-0.5 font-semibold">
+                      {totalRestockEventsCount} {lang === "th" ? "ครั้ง" : "times"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick Restock Action Bar */}
+              <div className="bg-emerald-50 border border-emerald-200/80 rounded-2xl p-4 flex items-center justify-between shadow-sm">
+                <div className="space-y-0.5">
+                  <h4 className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                    <Boxes className="w-4 h-4 text-emerald-600" />
+                    <span>{t.quickRestock}</span>
+                  </h4>
+                  <p className="text-[10px] text-emerald-700 font-medium">
+                    {lang === "th"
+                      ? "บันทึกจำนวนของที่เติมระหว่างวันเพื่อคำนวณคลังเปิด-ปิด"
+                      : "Record stock added during the shift for daily balance"}
+                  </p>
+                </div>
+                <button
+                  id="zreport-quick-restock-btn"
+                  onClick={() => {
+                    setPreselectedRestockItemId(null);
+                    setRestockModalOpen(true);
+                  }}
+                  className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 shadow-sm cursor-pointer transition-all active:scale-95 shrink-0"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{lang === "th" ? "เติมสต็อก" : "Restock"}</span>
+                </button>
+              </div>
+
+              {/* Cake Chart: Best Sellers */}
+              <CakeChart
+                slices={cakeSlices}
+                currencySymbol={t.thb}
+                totalLabel={t.totalAmount}
+                title={t.bestSellerCakeChart}
+                lang={lang}
+              />
+
+              {/* Daily Stock Balance Table */}
+              <DailyStockTable
+                rows={dailyStockRows}
+                lang={lang}
+                onQuickRestock={(itemId) => {
+                  setPreselectedRestockItemId(itemId);
+                  setRestockModalOpen(true);
+                }}
+              />
+
+              {/* Activity Timeline (Orders & Restocks) */}
+              <DailyTimeline
+                events={dayTimelineEvents}
+                lang={lang}
+                currencySymbol={t.thb}
+                onViewSlip={(img) => setFullScreenImage(img)}
+              />
+
+              {/* Procurement / Shopping Section */}
+              {(lowStockMenuItems.length > 0 || customShoppingList.length > 0) && (
+                <div className="bg-white border border-slate-200/80 rounded-2xl p-4 space-y-3 shadow-sm">
+                  <h4 className="text-[10px] uppercase tracking-widest text-slate-400 font-black flex items-center gap-1.5 border-b border-slate-100 pb-2">
+                    <ShoppingCart className="w-3.5 h-3.5 text-slate-900" />
+                    <span>{t.shoppingListTitle}</span>
+                  </h4>
+                  <div className="space-y-2">
+                    {lowStockMenuItems.map(it => (
+                      <div key={it.id} className="p-2.5 rounded-xl bg-red-50 border border-red-200 flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xl">{it.image}</span>
+                          <div>
+                            <p className="font-bold text-red-900">{lang === "en" ? it.nameEN : it.nameTH}</p>
+                            <p className="text-[10px] text-red-600 font-mono font-semibold">
+                              {t.stockLabel}: {it.currentStock} / {t.minThreshold}: {it.lowStockThreshold}
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setPreselectedRestockItemId(it.id);
+                            setRestockModalOpen(true);
+                          }}
+                          className="px-2 py-1 rounded-lg bg-red-600 hover:bg-red-700 text-white font-bold text-[10px] cursor-pointer"
+                        >
+                          + {lang === "th" ? "เติม" : "Restock"}
+                        </button>
+                      </div>
+                    ))}
+                    {customShoppingList.map((item, idx) => (
+                      <div key={idx} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
+                        <span className="font-medium text-slate-700">• {item}</span>
+                        <button
+                          onClick={() => handleRemoveCustomShoppingItem(idx)}
+                          className="text-slate-400 hover:text-red-600 p-1 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Action Buttons: PDF Download & Clear Shift */}
+              <div className="grid grid-cols-1 gap-3 pt-2">
+                <button
+                  id="download-pdf-btn"
+                  onClick={handleDownloadPdf}
+                  disabled={isDownloadingPdf}
+                  className={`w-full py-3.5 rounded-2xl font-black text-xs tracking-wider flex items-center justify-center gap-2 transition-all uppercase cursor-pointer shadow-md ${
+                    isDownloadingPdf 
+                      ? "bg-slate-100 border border-slate-200 text-slate-400 cursor-not-allowed" 
+                      : "bg-slate-900 hover:bg-slate-800 text-white active:scale-95 shadow-slate-900/10"
+                  }`}
+                >
+                  <Download className={`w-4 h-4 ${isDownloadingPdf ? "animate-bounce" : ""}`} />
+                  <span>{isDownloadingPdf ? t.downloadingPdf : t.downloadPdfBtn}</span>
+                </button>
+
+                {selectedReportDate === getLocalDateString() && (
                   <button
+                    id="clear-shift-btn"
                     onClick={() => setShowClearShiftConfirm(true)}
                     className="w-full py-3.5 rounded-2xl font-black text-xs tracking-wider flex items-center justify-center gap-2 transition-all uppercase cursor-pointer border border-red-200 bg-red-50 hover:bg-red-100 text-red-600 active:scale-95"
                   >
                     <RefreshCw className="w-4 h-4" />
                     <span>{t.clearShiftBtn}</span>
                   </button>
-                </div>
+                )}
               </div>
-            );
-          })()}
+            </div>
+          )}
 
         </main>
 
@@ -2383,7 +2677,9 @@ export default function App() {
                       ? "bg-blue-100 text-blue-800"
                       : "bg-emerald-100 text-emerald-800"
                   }`}>
-                    {lineOrderModal.paymentMethod === "เงินโอน" ? "📲 เงินโอน (Transfer)" : "💵 เงินสด (Cash)"}
+                    {lineOrderModal.paymentMethod === "เงินโอน" 
+                      ? (lang === "th" ? "📲 เงินโอน" : "📲 Bank Transfer") 
+                      : (lang === "th" ? "💵 เงินสด" : "💵 Cash")}
                   </span>
                 </div>
               </div>
@@ -2532,6 +2828,20 @@ export default function App() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Quick Restock Modal */}
+      <QuickRestockModal
+        isOpen={restockModalOpen}
+        onClose={() => {
+          setRestockModalOpen(false);
+          setPreselectedRestockItemId(null);
+        }}
+        items={menuItems}
+        menuItems={menuItems}
+        onConfirmRestock={handleQuickRestockConfirm}
+        lang={lang}
+        preselectedItemId={preselectedRestockItemId}
+      />
 
       {/* Hardcoded PIN Verification Modal */}
       <AnimatePresence>
@@ -2998,7 +3308,7 @@ export default function App() {
                           </div>
                           <div>
                             <span className="text-[10px] font-black uppercase tracking-wider text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
-                              Update Ready
+                              {lang === "th" ? "มีอัปเดตใหม่" : "Update Ready"}
                             </span>
                             <h4 className="text-sm font-black text-slate-900 mt-1">
                               {t.newVersionFound.replace("{version}", updateInfo.latestVersion)}
@@ -3097,7 +3407,7 @@ export default function App() {
                         <span>{t.clearCacheBtn}</span>
                       </button>
                       <p className="text-[10px] text-slate-400 text-center mt-1.5 font-medium">
-                        Safe reload: does not delete shop inventory or transactions.
+                        {lang === "th" ? "โหลดข้อมูลใหม่โดยปลอดภัย: ไม่ลบสต็อกสินค้าหรือประวัติการขาย" : "Safe reload: does not delete shop inventory or transactions."}
                       </p>
                     </div>
                   </div>
