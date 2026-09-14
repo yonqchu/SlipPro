@@ -288,15 +288,15 @@ const TRANSLATIONS = {
     totalCash: "Total Cash",
     totalTransactions: "Total Transactions",
     itemizedSales: "Itemized Sales Count",
-    clearShiftBtn: "Clear Shift",
+    clearShiftBtn: "Close Shop Today",
     downloadPdfBtn: "Download PDF Report",
-    clearShiftConfirm: "Are you sure you want to clear today's sales data and the manual shopping list? Tracked stock levels and catalog items will remain intact.",
-    shiftClearedToast: "Shift cleared successfully!",
+    clearShiftConfirm: "Are you sure you want to close the shop for today? The daily shopping list will be cleared, but all past sales history will be retained.",
+    shiftClearedToast: "Shop closed for today successfully!",
     noSalesToday: "No sales recorded for this date.",
     zReportTitle: "Daily Sales & Stock Report",
-    confirmClearShiftHeader: "Wipe Shift & Start New Day?",
-    confirmClearShiftBody: "This action will permanently delete all transaction logs of today and empty your shopping list. Your item stock counts and menu settings will NOT be changed.",
-    confirmClearShiftBtn: "Yes, Clear Shift",
+    confirmClearShiftHeader: "Close Shop Today?",
+    confirmClearShiftBody: "This action will conclude today's shift and clear your daily shopping list. All sales history will be safely stored and can be reviewed later.",
+    confirmClearShiftBtn: "Yes, Close Shop",
     downloadingPdf: "Downloading PDF...",
     unitPrice: "Unit Price",
     configConsole: "Configuration Console",
@@ -456,15 +456,15 @@ const TRANSLATIONS = {
     totalCash: "ยอดเงินสด",
     totalTransactions: "จำนวนบิลขาย",
     itemizedSales: "สรุปรายการขายแยกประเภท",
-    clearShiftBtn: "เริ่มกะใหม่",
+    clearShiftBtn: "ปิดร้านวันนี้",
     downloadPdfBtn: "ดาวน์โหลดรายงาน",
-    clearShiftConfirm: "คุณต้องการเคลียร์ประวัติการขายและรายการซื้อของในวันนี้ใช่หรือไม่? (คลังสินค้าและเมนูจะคงอยู่ตามปกติ)",
-    shiftClearedToast: "ล้างยอดขายและเริ่มกะใหม่เรียบร้อย!",
+    clearShiftConfirm: "คุณต้องการปิดร้านของวันนี้ใช่หรือไม่? ระบบจะบันทึกยอดขายของวันนี้ไว้ และล้างรายการซื้อของเพื่อเตรียมพร้อมสำหรับวันถัดไป",
+    shiftClearedToast: "ปิดร้านวันนี้และล้างรายการซื้อของเรียบร้อย!",
     noSalesToday: "ไม่มีประวัติการขายสำหรับวันที่เลือก",
     zReportTitle: "รายงานสรุปยอดขายประจำวัน",
-    confirmClearShiftHeader: "ล้างประวัติกะและเริ่มรอบใหม่?",
-    confirmClearShiftBody: "การดำเนินการนี้จะลบประวัติการขายทั้งหมดของวันนี้และรายการวัตถุดิบซื้อของ แต่จะไม่ส่งผลกระทบใดๆ ต่อสต็อกสินค้าและเมนูร้านค้าของคุณ",
-    confirmClearShiftBtn: "ตกลง, เริ่มกะใหม่",
+    confirmClearShiftHeader: "ปิดร้านวันนี้?",
+    confirmClearShiftBody: "การดำเนินการนี้จะสิ้นสุดการขายของวันนี้ รายการซื้อของ (Shopping List) จะถูกล้าง แต่ประวัติการขายทั้งหมดจะถูกบันทึกไว้ให้คุณดูย้อนหลังได้",
+    confirmClearShiftBtn: "ตกลง, ปิดร้าน",
     downloadingPdf: "กำลังดาวน์โหลดรายงาน...",
     unitPrice: "ราคาต่อหน่วย",
     configConsole: "แผงควบคุมระบบ",
@@ -679,12 +679,12 @@ export default function App() {
   const t = TRANSLATIONS[lang];
 
   // Quick Restock handler for single item
-  const handleQuickRestockConfirm = (itemId: string, amount: number) => {
+  const handleQuickRestockConfirm = (itemId: string, amount: number, isSpoilage?: boolean) => {
     const item = menuItems.find(i => i.id === itemId);
     if (!item) return;
 
     const prev = item.currentStock;
-    const newStock = prev + amount;
+    const newStock = isSpoilage ? Math.max(0, prev - amount) : prev + amount;
 
     const updated = menuItems.map(i => {
       if (i.id === itemId) {
@@ -706,10 +706,16 @@ export default function App() {
       newStock: newStock,
       date: getLocalDateString(),
       time: getLocalTimeString(),
+      type: isSpoilage ? "spoilage" : "restock",
     });
 
     setRestockEvents(prevEvents => [newEv, ...prevEvents]);
-    triggerToast(lang === "th" ? `เติมสต็อก ${item.nameTH} +${amount} สำเร็จ!` : `Restocked ${item.nameEN} +${amount}!`);
+    
+    if (isSpoilage) {
+      triggerToast(lang === "th" ? `บันทึกของเสีย ${item.nameTH} -${amount} สำเร็จ!` : `Logged spoilage for ${item.nameEN} -${amount}!`);
+    } else {
+      triggerToast(lang === "th" ? `เติมสต็อก ${item.nameTH} +${amount} สำเร็จ!` : `Restocked ${item.nameEN} +${amount}!`);
+    }
   };
 
   // Restock all handler
@@ -1290,9 +1296,7 @@ export default function App() {
   };
 
   const handleClearShift = () => {
-    setTransactions([]);
-    localStorage.setItem("slippro_transactions_v1", JSON.stringify([]));
-
+    // Preserve transactions, only clear the custom shopping list for the new shift/day
     setCustomShoppingList([]);
     localStorage.setItem("slippro_custom_shopping_v1", JSON.stringify([]));
 
@@ -1382,14 +1386,17 @@ export default function App() {
     .map(item => {
       const openingStock = openingMap[item.id] !== undefined ? openingMap[item.id] : item.currentStock;
       const restocked = (dayRestocks || [])
-        .filter(r => r && r.itemId === item.id)
+        .filter(r => r && r.itemId === item.id && r.type !== "spoilage")
+        .reduce((sum, r) => sum + (r.amount || 0), 0);
+      const spoiled = (dayRestocks || [])
+        .filter(r => r && r.itemId === item.id && r.type === "spoilage")
         .reduce((sum, r) => sum + (r.amount || 0), 0);
       const sold = allSoldItems
         .filter(it => it && (it.nameEN === item.nameEN || it.nameTH === item.nameTH))
         .reduce((sum, it) => sum + (it.quantity || 0), 0);
       const closingStock = selectedReportDate === getLocalDateString()
         ? item.currentStock
-        : Math.max(0, openingStock + restocked - sold);
+        : Math.max(0, openingStock + restocked - sold - spoiled);
 
       return {
         itemId: item.id,
@@ -1398,6 +1405,7 @@ export default function App() {
         openingStock,
         restocked,
         sold,
+        spoiled,
         closingStock,
       };
     });

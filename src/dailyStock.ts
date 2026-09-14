@@ -10,6 +10,7 @@ export interface RestockEvent {
   date: string; // YYYY-MM-DD
   time: string; // HH:mm:ss
   rawTimestamp: number;
+  type?: "restock" | "spoilage";
 }
 
 export interface DailyOpeningStockMap {
@@ -127,27 +128,46 @@ export interface CakeChartSlice {
   percentage: number;
 }
 
-// Generate SVG string for Donut/Cake chart that renders in both HTML and PDF
+// Generate Base64 Image string for Donut/Cake chart that renders perfectly in PDF via html2canvas
 export const renderCakeChartSVG = (
   slices: CakeChartSlice[],
   totalUnits: number,
   size = 200
 ): string => {
-  if (slices.length === 0 || totalUnits === 0) {
-    return `<svg width="${size}" height="${size}" viewBox="0 0 200 200">
-      <circle cx="100" cy="100" r="70" fill="none" stroke="#e2e8f0" stroke-width="28" />
-      <text x="100" y="105" text-anchor="middle" fill="#94a3b8" font-size="12" font-family="system-ui, sans-serif">No sales</text>
-    </svg>`;
-  }
+  const canvas = document.createElement("canvas");
+  // Use 2x resolution for crisp PDF output
+  canvas.width = size * 2;
+  canvas.height = size * 2;
+  const ctx = canvas.getContext("2d");
+  
+  if (!ctx) return "";
+  
+  ctx.scale(2, 2);
 
-  const cx = 100;
-  const cy = 100;
-  const outerR = 78;
-  const innerR = 48;
+  const cx = size / 2;
+  const cy = size / 2;
+  const outerR = size * 0.39; // 78 for 200
+  const innerR = size * 0.24; // 48 for 200
+
+  if (slices.length === 0 || totalUnits === 0) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, (outerR + innerR) / 2, 0, 2 * Math.PI);
+    ctx.strokeStyle = "#e2e8f0";
+    ctx.lineWidth = outerR - innerR;
+    ctx.stroke();
+    
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = "12px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("No sales", cx, cy + 5);
+    
+    return `<img src="${canvas.toDataURL("image/png")}" style="width: ${size}px; height: ${size}px; display: block; margin: 0 auto; max-width: 100%; height: auto;" />`;
+  }
 
   let cumulativeAngle = -Math.PI / 2; // Start from top (12 o'clock)
 
-  const paths = slices.map((slice) => {
+  slices.forEach((slice) => {
     const angle = (slice.quantity / totalUnits) * 2 * Math.PI;
     const startAngle = cumulativeAngle;
     const endAngle = cumulativeAngle + angle;
@@ -155,42 +175,46 @@ export const renderCakeChartSVG = (
 
     // Handle full circle edge case
     if (slices.length === 1 || slice.quantity === totalUnits) {
-      return `
-        <circle cx="${cx}" cy="${cy}" r="${(outerR + innerR) / 2}" fill="none" stroke="${slice.color}" stroke-width="${outerR - innerR}" />
-      `;
+      ctx.beginPath();
+      ctx.arc(cx, cy, (outerR + innerR) / 2, 0, 2 * Math.PI);
+      ctx.strokeStyle = slice.color;
+      ctx.lineWidth = outerR - innerR;
+      ctx.stroke();
+      return;
     }
 
-    const x1 = cx + outerR * Math.cos(startAngle);
-    const y1 = cy + outerR * Math.sin(startAngle);
-    const x2 = cx + outerR * Math.cos(endAngle);
-    const y2 = cy + outerR * Math.sin(endAngle);
-
-    const x3 = cx + innerR * Math.cos(endAngle);
-    const y3 = cy + innerR * Math.sin(endAngle);
-    const x4 = cx + innerR * Math.cos(startAngle);
-    const y4 = cy + innerR * Math.sin(startAngle);
-
-    const largeArc = angle > Math.PI ? 1 : 0;
-
-    const d = [
-      `M ${x1.toFixed(2)} ${y1.toFixed(2)}`,
-      `A ${outerR} ${outerR} 0 ${largeArc} 1 ${x2.toFixed(2)} ${y2.toFixed(2)}`,
-      `L ${x3.toFixed(2)} ${y3.toFixed(2)}`,
-      `A ${innerR} ${innerR} 0 ${largeArc} 0 ${x4.toFixed(2)} ${y4.toFixed(2)}`,
-      "Z",
-    ].join(" ");
-
-    return `<path d="${d}" fill="${slice.color}" stroke="#ffffff" stroke-width="2" />`;
+    ctx.beginPath();
+    ctx.arc(cx, cy, outerR, startAngle, endAngle, false);
+    ctx.arc(cx, cy, innerR, endAngle, startAngle, true);
+    ctx.closePath();
+    
+    ctx.fillStyle = slice.color;
+    ctx.fill();
+    
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 2;
+    ctx.stroke();
   });
 
-  return `
-    <svg width="${size}" height="${size}" viewBox="0 0 200 200" style="overflow: visible; display: block; margin: 0 auto; max-width: 100%; height: auto;">
-      <g>
-        ${paths.join("")}
-      </g>
-      <circle cx="${cx}" cy="${cy}" r="${innerR - 3}" fill="#ffffff" />
-      <text x="${cx}" y="${cy - 3}" text-anchor="middle" font-size="20" font-weight="900" fill="#0f172a" font-family="monospace, system-ui">${totalUnits}</text>
-      <text x="${cx}" y="${cy + 14}" text-anchor="middle" font-size="9" font-weight="800" fill="#64748b" font-family="system-ui" text-transform="uppercase" letter-spacing="1">TOTAL SOLD</text>
-    </svg>
-  `;
+  // Inner white circle
+  ctx.beginPath();
+  ctx.arc(cx, cy, innerR - 3, 0, 2 * Math.PI);
+  ctx.fillStyle = "#ffffff";
+  ctx.fill();
+
+  // Total Units Text
+  ctx.fillStyle = "#0f172a";
+  ctx.font = "900 20px monospace, system-ui";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(totalUnits.toString(), cx, cy - 3);
+
+  // Label Text
+  ctx.fillStyle = "#64748b";
+  ctx.font = "800 9px system-ui";
+  // Add simple tracking by spacing out string or rely on canvas text
+  // Canvas doesn't easily support letter-spacing natively in all browsers, so we'll just draw it normally
+  ctx.fillText("TOTAL SOLD", cx, cy + 14);
+
+  return `<img src="${canvas.toDataURL("image/png")}" style="width: ${size}px; height: ${size}px; display: block; margin: 0 auto; max-width: 100%; height: auto;" />`;
 };

@@ -1,5 +1,5 @@
 import React from "react";
-import { Clock, ShoppingBag, PackagePlus, Receipt, ArrowRight } from "lucide-react";
+import { Clock, ShoppingBag, PackagePlus, Receipt, ArrowRight, Trash2 } from "lucide-react";
 import { RestockEvent } from "../dailyStock";
 
 export interface TimelineSaleEvent {
@@ -133,29 +133,31 @@ export const DailyTimeline: React.FC<DailyTimelineProps> = ({
               </div>
             );
           } else {
-            // Restock event
+            // Restock or Spoilage event
             const rst = ev.event;
+            const isSpoilage = rst.type === "spoilage";
+            
             return (
               <div key={ev.id || idx} className="relative group">
                 {/* Dot */}
-                <div className="absolute -left-6 top-1.5 w-5 h-5 rounded-full border-2 border-white bg-amber-500 text-white flex items-center justify-center shadow-xs">
-                  <PackagePlus className="w-2.5 h-2.5" />
+                <div className={`absolute -left-6 top-1.5 w-5 h-5 rounded-full border-2 border-white ${isSpoilage ? 'bg-rose-500' : 'bg-amber-500'} text-white flex items-center justify-center shadow-xs`}>
+                  {isSpoilage ? <Trash2 className="w-2.5 h-2.5" /> : <PackagePlus className="w-2.5 h-2.5" />}
                 </div>
 
                 {/* Content Box */}
-                <div className="bg-amber-50/70 border border-amber-200/80 rounded-xl p-3 space-y-1 hover:border-amber-300 transition-colors">
+                <div className={`${isSpoilage ? 'bg-rose-50/70 border-rose-200/80 hover:border-rose-300' : 'bg-amber-50/70 border-amber-200/80 hover:border-amber-300'} border rounded-xl p-3 space-y-1 transition-colors`}>
                   <div className="flex justify-between items-center">
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] font-mono font-bold text-amber-700">
+                      <span className={`text-[10px] font-mono font-bold ${isSpoilage ? 'text-rose-700' : 'text-amber-700'}`}>
                         {ev.time}
                       </span>
-                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-900">
-                        {isTh ? "📦 เติมสต็อก" : "Restock"}
+                      <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${isSpoilage ? 'bg-rose-100 text-rose-900' : 'bg-amber-100 text-amber-900'}`}>
+                        {isTh ? (isSpoilage ? "🗑️ ของเสีย" : "📦 เติมสต็อก") : (isSpoilage ? "Spoilage" : "Restock")}
                       </span>
                     </div>
 
-                    <span className="text-xs font-black font-mono text-amber-700 bg-amber-200/60 px-2 py-0.5 rounded-md">
-                      +{rst.amount} {isTh ? "ชิ้น" : "pcs"}
+                    <span className={`text-xs font-black font-mono px-2 py-0.5 rounded-md ${isSpoilage ? 'text-rose-700 bg-rose-200/60' : 'text-amber-700 bg-amber-200/60'}`}>
+                      {isSpoilage ? '-' : '+'}{rst.amount} {isTh ? "ชิ้น" : "pcs"}
                     </span>
                   </div>
 

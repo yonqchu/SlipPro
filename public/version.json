@@ -1,6 +1,6 @@
 {
-  "version": "1.4.1",
-  "buildTime": "2026-09-14T18:17:00Z",
-  "cacheName": "slippro-cache-v15",
-  "releaseNotes": "System stability patch fixing array initialization crashes on cold start, and corrected PDF layout clipping for the daily report badge and donut chart."
+  "version": "1.5.0",
+  "buildTime": "2026-09-14T11:49:00Z",
+  "cacheName": "slippro-cache-v17",
+  "releaseNotes": "Added support for marking items as spoiled/broken. Reworked shift closing logic to preserve history."
 }

@@ -20,7 +20,7 @@ interface QuickRestockModalProps {
   items?: MenuItem[];
   menuItems?: MenuItem[];
   preselectedItemId?: string | null;
-  onConfirmRestock: (itemId: string, amount: number) => void;
+  onConfirmRestock: (itemId: string, amount: number, isSpoilage?: boolean) => void;
   lang: "en" | "th";
 }
 
@@ -37,6 +37,7 @@ export const QuickRestockModal: React.FC<QuickRestockModalProps> = ({
   const stockItems = (itemList || []).filter((it) => it && it.trackStock);
   const [selectedId, setSelectedId] = useState<string>("");
   const [amount, setAmount] = useState<number>(10);
+  const [isSpoilage, setIsSpoilage] = useState<boolean>(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -46,6 +47,7 @@ export const QuickRestockModal: React.FC<QuickRestockModalProps> = ({
         setSelectedId(stockItems[0].id);
       }
       setAmount(10);
+      setIsSpoilage(false);
     }
   }, [isOpen, preselectedItemId, itemList.length]);
 
@@ -53,13 +55,15 @@ export const QuickRestockModal: React.FC<QuickRestockModalProps> = ({
 
   const currentItem = stockItems.find((it) => it.id === selectedId);
   const currentStock = currentItem?.currentStock ?? 0;
-  const projectedStock = currentStock + (Number.isFinite(amount) ? amount : 0);
+  const projectedStock = isSpoilage 
+    ? Math.max(0, currentStock - (Number.isFinite(amount) ? amount : 0))
+    : currentStock + (Number.isFinite(amount) ? amount : 0);
 
-  const presets = [5, 10, 20, 50, 100];
+  const presets = [1, 2, 5, 10, 20];
 
   const handleConfirm = () => {
     if (!selectedId || amount <= 0) return;
-    onConfirmRestock(selectedId, amount);
+    onConfirmRestock(selectedId, amount, isSpoilage);
     onClose();
   };
 
@@ -76,15 +80,15 @@ export const QuickRestockModal: React.FC<QuickRestockModalProps> = ({
         {/* Header */}
         <div className="flex justify-between items-center pb-3 border-b border-slate-100">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center">
+            <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${isSpoilage ? 'bg-rose-500/10 text-rose-600' : 'bg-amber-500/10 text-amber-600'}`}>
               <Package className="w-4 h-4 stroke-[2.5]" />
             </div>
             <div>
               <h3 className="text-sm font-black text-slate-900 leading-none">
-                {isTh ? "เติมสต็อกสินค้า" : "Restock Inventory"}
+                {isTh ? (isSpoilage ? "บันทึกของเสีย" : "เติมสต็อกสินค้า") : (isSpoilage ? "Log Spoilage" : "Restock Inventory")}
               </h3>
               <p className="text-[10px] text-slate-400 mt-0.5 font-medium">
-                {isTh ? "บันทึกจำนวนสินค้าที่เติมเข้าระบบ" : "Log items restocked into inventory"}
+                {isTh ? (isSpoilage ? "ตัดสต็อกสินค้าที่ชำรุดหรือเสีย" : "บันทึกจำนวนสินค้าที่เติมเข้าระบบ") : (isSpoilage ? "Deduct broken or spoiled items" : "Log items restocked into inventory")}
               </p>
             </div>
           </div>
@@ -94,6 +98,24 @@ export const QuickRestockModal: React.FC<QuickRestockModalProps> = ({
             className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
           >
             <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Type Toggle */}
+        <div className="flex bg-slate-100 p-1 rounded-xl">
+          <button
+            type="button"
+            onClick={() => setIsSpoilage(false)}
+            className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${!isSpoilage ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            {isTh ? "📦 เติมสต็อก" : "📦 Restock"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsSpoilage(true)}
+            className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${isSpoilage ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            {isTh ? "🗑️ ของเสีย" : "🗑️ Spoilage"}
           </button>
         </div>
 
@@ -132,10 +154,10 @@ export const QuickRestockModal: React.FC<QuickRestockModalProps> = ({
             </div>
 
             <div className="text-right">
-              <span className="text-[9px] font-black uppercase text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">
-                {isTh ? "หลังเติม" : "New Total"}
+              <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${isSpoilage ? 'text-rose-600 bg-rose-100' : 'text-amber-600 bg-amber-100'}`}>
+                {isTh ? (isSpoilage ? "หลังหักออก" : "หลังเติม") : "New Total"}
               </span>
-              <p className="text-base font-black font-mono text-emerald-600 mt-1">
+              <p className={`text-base font-black font-mono mt-1 ${isSpoilage ? 'text-rose-600' : 'text-emerald-600'}`}>
                 {projectedStock}
               </p>
             </div>
@@ -145,8 +167,8 @@ export const QuickRestockModal: React.FC<QuickRestockModalProps> = ({
         {/* Quantity Stepper & Presets */}
         <div className="space-y-2.5">
           <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex justify-between items-center">
-            <span>{isTh ? "จำนวนที่ต้องการเติม" : "Restock Amount"}</span>
-            <span className="text-emerald-600 font-mono font-bold">+{amount}</span>
+            <span>{isTh ? "จำนวน" : "Amount"}</span>
+            <span className={`${isSpoilage ? 'text-rose-600' : 'text-emerald-600'} font-mono font-bold`}>{isSpoilage ? '-' : '+'}{amount}</span>
           </label>
 
           {/* Stepper */}
@@ -154,7 +176,7 @@ export const QuickRestockModal: React.FC<QuickRestockModalProps> = ({
             <button
               type="button"
               onClick={() => setAmount((prev) => Math.max(1, prev - 1))}
-              className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center font-bold transition-all active:scale-95"
+              className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center font-bold transition-all active:scale-95 cursor-pointer"
             >
               <Minus className="w-4 h-4" />
             </button>
@@ -168,7 +190,7 @@ export const QuickRestockModal: React.FC<QuickRestockModalProps> = ({
             <button
               type="button"
               onClick={() => setAmount((prev) => prev + 1)}
-              className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center font-bold transition-all active:scale-95"
+              className="w-10 h-10 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center font-bold transition-all active:scale-95 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
             </button>
@@ -181,7 +203,7 @@ export const QuickRestockModal: React.FC<QuickRestockModalProps> = ({
                 key={preset}
                 type="button"
                 onClick={() => setAmount((prev) => prev + preset)}
-                className="py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 active:bg-slate-100 text-slate-700 text-[11px] font-bold font-mono transition-all shadow-2xs"
+                className="py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 active:bg-slate-100 text-slate-700 text-[11px] font-bold font-mono transition-all shadow-2xs cursor-pointer"
               >
                 +{preset}
               </button>
@@ -194,11 +216,11 @@ export const QuickRestockModal: React.FC<QuickRestockModalProps> = ({
           <button
             type="button"
             onClick={handleConfirm}
-            disabled={amount <= 0 || !selectedId}
-            className="flex-1 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-black text-xs cursor-pointer shadow-lg shadow-emerald-600/20 transition-all active:scale-95 flex items-center justify-center gap-1.5"
+            disabled={amount <= 0 || !selectedId || (isSpoilage && currentStock === 0)}
+            className={`flex-1 py-3 px-4 rounded-xl disabled:opacity-50 text-white font-black text-xs cursor-pointer shadow-lg transition-all active:scale-95 flex items-center justify-center gap-1.5 ${isSpoilage ? 'bg-rose-600 hover:bg-rose-500 shadow-rose-600/20' : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/20'}`}
           >
             <Check className="w-4 h-4 stroke-[3]" />
-            <span>{isTh ? "บันทึกการเติมสต็อก" : "Confirm Restock"}</span>
+            <span>{isTh ? (isSpoilage ? "บันทึกของเสีย" : "บันทึกการเติมสต็อก") : "Confirm"}</span>
           </button>
           <button
             type="button"

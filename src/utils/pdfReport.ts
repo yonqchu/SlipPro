@@ -48,6 +48,9 @@ export const generateDailyPdfReport = async (params: GeneratePdfParams): Promise
       <td style="padding: 8px 6px; text-align: center; font-size: 11px; font-family: monospace; color: #e11d48; font-weight: 700;">
         ${r.sold > 0 ? `-${r.sold}` : "—"}
       </td>
+      <td style="padding: 8px 6px; text-align: center; font-size: 11px; font-family: monospace; color: #9f1239; font-weight: 700;">
+        ${(r.spoiled || 0) > 0 ? `-${r.spoiled}` : "—"}
+      </td>
       <td style="padding: 8px 6px; text-align: right; font-size: 11px; font-family: monospace; color: #0f172a; font-weight: 800;">
         ${r.closingStock}
       </td>
@@ -85,21 +88,30 @@ export const generateDailyPdfReport = async (params: GeneratePdfParams): Promise
         </div>
       `;
     } else {
-      // Restock event
+      // Restock or Spoilage event
       const rst = ev.event;
+      const isSpoilage = rst.type === "spoilage";
+      const bgColor = isSpoilage ? "#fff1f2" : "#fffbeb";
+      const borderColor = isSpoilage ? "#f43f5e" : "#f59e0b";
+      const badgeBg = isSpoilage ? "#ffe4e6" : "#fef3c7";
+      const textColor = isSpoilage ? "#be123c" : "#b45309";
+      const badgeTextColor = isSpoilage ? "#9f1239" : "#92400e";
+      const badgeText = isTh ? (isSpoilage ? "🗑️ ของเสีย" : "📦 เติมสต็อกสินค้า") : (isSpoilage ? "🗑️ Spoilage" : "📦 Inventory Restock");
+      const sign = isSpoilage ? "-" : "+";
+
       return `
-        <div style="padding: 8px 10px; margin-bottom: 6px; background-color: #fffbeb; border-left: 3px solid #f59e0b; border-radius: 6px; font-size: 11px;">
+        <div style="padding: 8px 10px; margin-bottom: 6px; background-color: ${bgColor}; border-left: 3px solid ${borderColor}; border-radius: 6px; font-size: 11px;">
           <div style="display: flex; justify-content: space-between; align-items: center;">
             <div style="display: flex; align-items: center; gap: 6px;">
-              <span style="font-family: monospace; font-weight: 700; color: #b45309; font-size: 10px;">⏰ ${ev.time}</span>
-              <span style="background-color: #fef3c7; color: #92400e; font-weight: 800; font-size: 9px; padding: 2px 6px; border-radius: 4px;">
-                ${isTh ? "📦 เติมสต็อกสินค้า" : "📦 Inventory Restock"}
+              <span style="font-family: monospace; font-weight: 700; color: ${textColor}; font-size: 10px;">⏰ ${ev.time}</span>
+              <span style="background-color: ${badgeBg}; color: ${badgeTextColor}; font-weight: 800; font-size: 9px; padding: 2px 6px; border-radius: 4px;">
+                ${badgeText}
               </span>
             </div>
-            <span style="font-family: monospace; font-weight: 800; color: #b45309; font-size: 11px;">+${rst.amount} ${isTh ? "ชิ้น" : "pcs"}</span>
+            <span style="font-family: monospace; font-weight: 800; color: ${textColor}; font-size: 11px;">${sign}${rst.amount} ${isTh ? "ชิ้น" : "pcs"}</span>
           </div>
-          <div style="color: #78350f; font-size: 10px; margin-top: 3px; font-weight: 600;">
-            ${rst.image} ${isTh ? rst.itemNameTH : rst.itemNameEN} &nbsp;•&nbsp; ${isTh ? "ก่อนเติม" : "Prev"}: ${rst.previousStock} ➔ ${isTh ? "หลังเติม" : "New"}: ${rst.newStock}
+          <div style="color: ${textColor}; font-size: 10px; margin-top: 3px; font-weight: 600;">
+            ${rst.image} ${isTh ? rst.itemNameTH : rst.itemNameEN} &nbsp;•&nbsp; ${isTh ? (isSpoilage ? "ก่อนหัก" : "ก่อนเติม") : "Prev"}: ${rst.previousStock} ➔ ${isTh ? (isSpoilage ? "หลังหัก" : "หลังเติม") : "New"}: ${rst.newStock}
           </div>
         </div>
       `;
@@ -134,8 +146,8 @@ export const generateDailyPdfReport = async (params: GeneratePdfParams): Promise
           <h1 style="font-size: 22px; font-weight: 900; color: #0f172a; margin: 0; text-transform: uppercase;">${params.shopProfile.name}</h1>
           <p style="font-size: 11px; color: #475569; margin: 4px 0 0 0; font-weight: 500;">📍 ${params.shopProfile.address}</p>
         </div>
-        <div style="width: 38%; text-align: right;">
-          <div style="display: inline-block; background-color: #0f172a; color: #ffffff; padding: 6px 14px; border-radius: 8px; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px;">
+        <div style="width: 38%; display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-start;">
+          <div style="background-color: #0f172a; color: #ffffff; padding: 6px 14px; border-radius: 8px; font-size: 10px; font-weight: 800; text-transform: uppercase; margin-bottom: 6px; white-space: nowrap;">
             ${isTh ? "รายงานประจำวัน" : "DAILY REPORT"}
           </div>
           <p style="font-size: 11px; color: #334155; margin: 0; font-weight: 700; font-family: monospace;">${params.formattedDate}</p>
@@ -199,6 +211,7 @@ export const generateDailyPdfReport = async (params: GeneratePdfParams): Promise
                 <th style="text-align: center; padding: 4px 2px;">${isTh ? "เริ่มวัน" : "Open"}</th>
                 <th style="text-align: center; padding: 4px 2px; color: #d97706;">${isTh ? "+เติม" : "+Rst"}</th>
                 <th style="text-align: center; padding: 4px 2px; color: #e11d48;">${isTh ? "-ขาย" : "-Sold"}</th>
+                <th style="text-align: center; padding: 4px 2px; color: #9f1239;">${isTh ? "-เสีย" : "-Spl"}</th>
                 <th style="text-align: right; padding: 4px 2px; color: #0f172a;">${isTh ? "คงเหลือ" : "End"}</th>
               </tr>
             </thead>

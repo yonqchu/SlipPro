@@ -9,6 +9,7 @@ export interface DailyStockRow {
   restocked: number;
   sold: number;
   closingStock: number;
+  spoiled?: number;
 }
 
 interface DailyStockTableProps {
@@ -54,6 +55,9 @@ export const DailyStockTable: React.FC<DailyStockTableProps> = ({
               <th className="py-2 px-1 text-center text-rose-600" title={isTh ? "ขายได้" : "Sold"}>
                 {isTh ? "-ขาย" : "-Sold"}
               </th>
+              <th className="py-2 px-1 text-center text-rose-800" title={isTh ? "ของเสีย/ทิ้ง" : "Spoiled"}>
+                {isTh ? "-เสีย" : "-Spoil"}
+              </th>
               <th className="py-2 px-2 text-right text-emerald-600 font-black" title={isTh ? "คงเหลือ" : "Remaining"}>
                 {isTh ? "คงเหลือ" : "End"}
               </th>
@@ -77,6 +81,9 @@ export const DailyStockTable: React.FC<DailyStockTableProps> = ({
                 </td>
                 <td className="py-2 px-1 text-center font-bold text-rose-600">
                   {row.sold > 0 ? `-${row.sold}` : "—"}
+                </td>
+                <td className="py-2 px-1 text-center font-bold text-rose-800">
+                  {(row.spoiled || 0) > 0 ? `-${row.spoiled}` : "—"}
                 </td>
                 <td className="py-2 px-2 text-right font-black text-slate-900">
                   <span
