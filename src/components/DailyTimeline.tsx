@@ -81,12 +81,14 @@ export const DailyTimeline: React.FC<DailyTimelineProps> = ({
           {safeEvents.map((ev, idx) => {
             if (ev.type === "sale") {
               const isCash = ev.paymentMethod === "เงินสด";
+              const isTransfer = ev.paymentMethod === "เงินโอน";
+              const isOnline = ev.paymentMethod === "ออนไลน์";
               return (
                 <div key={ev.id || idx} className="relative group">
                   {/* Dot */}
                   <div
                     className={`absolute -left-6 top-1.5 w-5 h-5 rounded-full border-2 border-white flex items-center justify-center shadow-xs ${
-                      isCash ? "bg-emerald-500 text-white" : "bg-blue-500 text-white"
+                      isCash ? "bg-emerald-500 text-white" : isTransfer ? "bg-blue-500 text-white" : "bg-purple-500 text-white"
                     }`}
                   >
                     <ShoppingBag className="w-2.5 h-2.5" />
@@ -102,16 +104,22 @@ export const DailyTimeline: React.FC<DailyTimelineProps> = ({
                           className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${
                             isCash
                               ? "bg-emerald-100 text-emerald-800"
-                              : "bg-blue-100 text-blue-800"
+                              : isTransfer
+                              ? "bg-blue-100 text-blue-800"
+                              : "bg-purple-100 text-purple-800"
                           }`}
                         >
                           {isTh
                             ? isCash
                               ? "💵 เงินสด"
-                              : "📲 เงินโอน"
+                              : isTransfer
+                              ? "📲 เงินโอน"
+                              : "🌐 ออนไลน์"
                             : isCash
                             ? "Cash"
-                            : "Transfer"}
+                            : isTransfer
+                            ? "Transfer"
+                            : "Online"}
                         </span>
                         {ev.hasSlip && (
                           <span className="text-[9px] font-bold text-slate-500 bg-slate-200/80 px-1.5 py-0.2 rounded">
@@ -120,7 +128,7 @@ export const DailyTimeline: React.FC<DailyTimelineProps> = ({
                         )}
                       </div>
                       <span className="text-xs font-black font-mono text-emerald-600">
-                        {currencySymbol}{ev.total}
+                        {isOnline ? (isTh ? "ไม่ระบุ" : "N/A") : `${currencySymbol}${ev.total}`}
                       </span>
                     </div>
                     {/* Item breakdown */}
@@ -131,7 +139,7 @@ export const DailyTimeline: React.FC<DailyTimelineProps> = ({
                             • {isTh ? it.nameTH : it.nameEN} x {it.quantity}
                           </span>
                           <span className="font-mono text-slate-500 text-[10px]">
-                            {currencySymbol}{it.price * it.quantity}
+                            {isOnline ? "-" : `${currencySymbol}${it.price * it.quantity}`}
                           </span>
                         </div>
                       ))}

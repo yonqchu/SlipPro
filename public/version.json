@@ -1,6 +1,4 @@
 {
-  "version": "2.1.2",
-  "buildTime": "2026-09-16T11:20:00Z",
-  "cacheName": "slippro-cache-v26",
-  "releaseNotes": "Fix QR code reader crashing on unreadable images."
+  "version": "2.1.8",
+  "releaseNotes": "Hide online totals from PDF report and timeline."
 }
