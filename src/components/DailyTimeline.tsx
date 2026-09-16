@@ -47,7 +47,7 @@ export const DailyTimeline: React.FC<DailyTimelineProps> = ({
 
   if (safeEvents.length === 0) {
     return (
-      <div className="bg-slate-50/70 border border-slate-200/80 rounded-2xl p-6 text-center">
+      <div className="bg-white border-b border-slate-100 p-8 text-center">
         <Clock className="w-8 h-8 text-slate-300 mx-auto mb-2" />
         <p className="text-xs text-slate-400 font-medium italic">
           {isTh ? "ไม่มีรายการขายหรือการเติมสต็อกในวันนี้" : "No sales or restock activities recorded on this date"}
@@ -57,7 +57,7 @@ export const DailyTimeline: React.FC<DailyTimelineProps> = ({
   }
 
   return (
-    <div className="bg-white border border-slate-200/80 rounded-2.5xl p-5 shadow-xs space-y-3.5">
+    <div className="bg-white px-5 py-4 space-y-3 border-b border-slate-100">
       <div 
         className="flex justify-between items-center border-b border-slate-100 pb-2.5 cursor-pointer hover:opacity-80 transition-opacity"
         onClick={() => setIsOpen(!isOpen)}

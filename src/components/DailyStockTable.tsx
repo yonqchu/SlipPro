@@ -30,7 +30,7 @@ export const DailyStockTable: React.FC<DailyStockTableProps> = ({
   const handleRestock = onQuickRestock || onQuickRestockItem;
 
   return (
-    <div className="bg-white border border-slate-200/80 rounded-2.5xl p-5 shadow-xs space-y-3.5">
+    <div className="bg-white px-5 py-4 space-y-3 border-b border-slate-100">
       <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
         <h4 className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
           <Boxes className="w-4 h-4 text-amber-600" />

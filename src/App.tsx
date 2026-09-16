@@ -2665,9 +2665,9 @@ export default function App() {
                 </button>
               </div>
 
-              <div className="p-4 space-y-6">
+              <div className="flex flex-col pb-12 bg-slate-50">
                 {/* Quick Restock Action Bar */}
-                <div className="bg-emerald-50 border border-emerald-200/80 rounded-2xl p-4 flex items-center justify-between shadow-sm">
+                <div className="bg-emerald-50 p-5 flex items-center justify-between border-b border-emerald-100">
                   <div className="space-y-0.5">
                     <h4 className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
                       <Boxes className="w-4 h-4 text-emerald-600" />
@@ -2712,7 +2712,7 @@ export default function App() {
 
                 {/* Procurement / Shopping Section */}
                 {(lowStockMenuItems.length > 0 || customShoppingList.length > 0) && (
-                  <div className="bg-white border border-slate-200/80 rounded-2xl p-4 space-y-3 shadow-sm">
+                  <div className="bg-white p-5 space-y-3 border-b border-slate-100">
                     <h4 className="text-[10px] uppercase tracking-widest text-slate-400 font-black flex items-center gap-1.5 border-b border-slate-100 pb-2">
                       <ShoppingCart className="w-3.5 h-3.5 text-slate-900" />
                       <span>{t.shoppingListTitle}</span>
