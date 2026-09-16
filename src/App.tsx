@@ -42,6 +42,7 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import QRCode from "qrcode";
 import { Html5Qrcode } from "html5-qrcode";
+import LZString from "lz-string";
 import html2pdf from "html2pdf.js";
 import { APP_VERSION, CACHE_VERSION, BUILD_TIME } from "./version";
 import {
@@ -1529,18 +1530,35 @@ export default function App() {
   };
 
   const handleExportConfig = async () => {
+    // Minify config keys for better compression
+    const minifiedItems = menuItems.map(item => ({
+      i: item.id,
+      e: item.nameEN,
+      t: item.nameTH,
+      p: item.price,
+      ts: item.trackStock ? 1 : 0,
+      ls: item.lowStockThreshold,
+      im: item.image
+    }));
+
     const config = {
-      shopProfile,
-      menuItems
+      s: {
+        n: shopProfile.name,
+        a: shopProfile.address,
+        l: shopProfile.lineId
+      },
+      m: minifiedItems
     };
+
     try {
       const jsonStr = JSON.stringify(config);
-      const dataUrl = await QRCode.toDataURL(jsonStr, { width: 300, margin: 2 });
+      const compressed = LZString.compressToEncodedURIComponent(jsonStr);
+      const dataUrl = await QRCode.toDataURL(compressed, { width: 300, margin: 2, errorCorrectionLevel: 'L' });
       setQrCodeDataUrl(dataUrl);
-      triggerToast("QR Code generated successfully!");
+      triggerToast(lang === "en" ? "QR Code generated successfully!" : "สร้าง QR Code สำเร็จ!");
     } catch (err) {
       console.error(err);
-      triggerToast("Failed to generate QR Code");
+      triggerToast(lang === "en" ? "Failed to generate QR Code. Data too large." : "ข้อมูลมากเกินไป ไม่สามารถสร้าง QR ได้");
     }
   };
 
@@ -1613,15 +1631,48 @@ export default function App() {
     setIsCameraScanning(false);
   };
 
-  const importConfigJson = (jsonString: string) => {
+  const importConfigJson = (payload: string) => {
     try {
+      // First try to decompress
+      let jsonString = payload;
+      const decompressed = LZString.decompressFromEncodedURIComponent(payload);
+      if (decompressed) {
+        jsonString = decompressed;
+      }
+
       const parsed = JSON.parse(jsonString);
       if (parsed && typeof parsed === "object") {
-        if (parsed.shopProfile && typeof parsed.shopProfile === "object" && Array.isArray(parsed.menuItems)) {
-          setShopProfile(parsed.shopProfile);
-          setMenuItems(parsed.menuItems);
-          localStorage.setItem("slippro_shop_profile_v1", JSON.stringify(parsed.shopProfile));
-          localStorage.setItem("slippro_stock_v2", JSON.stringify(parsed.menuItems));
+        let newShopProfile = null;
+        let newMenuItems = null;
+
+        // Support both minified and legacy formats
+        if (parsed.s && typeof parsed.s === "object" && Array.isArray(parsed.m)) {
+          newShopProfile = {
+            name: parsed.s.n || "",
+            address: parsed.s.a || "",
+            lineId: parsed.s.l || ""
+          };
+          newMenuItems = parsed.m.map((item: any) => ({
+            id: item.i,
+            nameEN: item.e || "",
+            nameTH: item.t || "",
+            price: Number(item.p) || 0,
+            trackStock: item.ts === 1,
+            currentStock: 99,
+            lowStockThreshold: Number(item.ls) || 0,
+            image: item.im || "📦",
+            color: "bg-slate-50 text-slate-700 border-slate-100"
+          }));
+        } else if (parsed.shopProfile && typeof parsed.shopProfile === "object" && Array.isArray(parsed.menuItems)) {
+          newShopProfile = parsed.shopProfile;
+          newMenuItems = parsed.menuItems;
+        }
+
+        if (newShopProfile && newMenuItems) {
+          setShopProfile(newShopProfile);
+          setMenuItems(newMenuItems);
+          localStorage.setItem("slippro_shop_profile_v1", JSON.stringify(newShopProfile));
+          localStorage.setItem("slippro_stock_v2", JSON.stringify(newMenuItems));
           triggerToast(t.scanSuccess);
           setQrCodeDataUrl(null);
           return true;
