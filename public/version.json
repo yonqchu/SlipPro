@@ -1,6 +1,6 @@
 {
-  "version": "2.1.0",
-  "buildTime": "2026-09-16T10:40:00Z",
-  "cacheName": "slippro-cache-v24",
-  "releaseNotes": "Added history pagination, dedicated Restock tab, clean PDF."
+  "version": "2.1.1",
+  "buildTime": "2026-09-16T11:15:00Z",
+  "cacheName": "slippro-cache-v25",
+  "releaseNotes": "Fixed QR code generation for large menu configurations."
 }
