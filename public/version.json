@@ -1,6 +1,6 @@
 {
-  "version": "1.7.2",
-  "buildTime": "2026-09-14T20:54:00Z",
-  "cacheName": "slippro-cache-v21",
-  "releaseNotes": "Added date/time stamps to captured photos."
+  "version": "1.7.3",
+  "buildTime": "2026-09-16T04:15:00Z",
+  "cacheName": "slippro-cache-v22",
+  "releaseNotes": "Fixed OOM crash on lower-end devices during photo capture."
 }
