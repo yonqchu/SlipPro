@@ -560,9 +560,6 @@ export default function App() {
 
   // Phase 2 State Declarations
   const [activeTab, setActiveTab] = useState<"register" | "history" | "checkout" | "zreport" | "restock">("register");
-  const [showPinModal, setShowPinModal] = useState(false);
-  const [pinInput, setPinInput] = useState("");
-  const [pinError, setPinError] = useState<string | null>(null);
   const [showManagerModal, setShowManagerModal] = useState(false);
   const [managerSubTab, setManagerSubTab] = useState<"profile" | "items" | "sync" | "system">("profile");
   
@@ -1249,18 +1246,6 @@ export default function App() {
   };
 
   // Phase 2 Manager Verification & Config Helpers
-  const handlePinVerify = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (pinInput === "1234") {
-      setPinError(null);
-      setShowPinModal(false);
-      setShowManagerModal(true);
-      setPinInput("");
-    } else {
-      setPinError(t.wrongPin);
-    }
-  };
-
   const handleSaveMenuItem = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingItem) return;
@@ -1825,7 +1810,7 @@ export default function App() {
             {/* Manager Settings Sub-menu (Gear button) */}
             <button
               id="settings-btn"
-              onClick={() => setShowPinModal(true)}
+              onClick={() => setShowManagerModal(true)}
               title={t.managerModalTitle}
               className="p-1.5 rounded-full bg-slate-50 hover:bg-slate-100 border border-slate-200 transition-all text-slate-500 hover:text-slate-900 cursor-pointer active:scale-95"
             >
@@ -3228,79 +3213,6 @@ export default function App() {
         lang={lang}
         preselectedItemId={preselectedRestockItemId}
       />
-
-      {/* Hardcoded PIN Verification Modal */}
-      <AnimatePresence>
-        {showPinModal && (
-          <div className="fixed inset-0 bg-slate-900/40 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white border border-slate-200 rounded-[2rem] p-6 max-w-sm w-full space-y-4 shadow-2xl"
-            >
-              <div className="flex justify-between items-center pb-2 border-b border-slate-100">
-                <h3 className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-1.5">
-                  <Settings className="w-4 h-4 text-slate-900" />
-                  <span>{t.managerModalTitle}</span>
-                </h3>
-                <button
-                  onClick={() => {
-                    setShowPinModal(false);
-                    setPinInput("");
-                    setPinError(null);
-                  }}
-                  className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <form onSubmit={handlePinVerify} className="space-y-4 pt-1">
-                <div className="space-y-1.5">
-                  <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-                    {t.pinPrompt}
-                  </label>
-                  <input
-                    type="password"
-                    pattern="[0-9]*"
-                    inputMode="numeric"
-                    maxLength={4}
-                    value={pinInput}
-                    onChange={(e) => setPinInput(e.target.value)}
-                    className="w-full text-center tracking-[1em] font-black text-xl py-3 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900 transition-all font-mono"
-                    placeholder="••••"
-                    autoFocus
-                  />
-                  {pinError && (
-                    <p className="text-red-500 font-bold text-[11px] text-center">{pinError}</p>
-                  )}
-                </div>
-
-                <div className="flex gap-2.5 pt-2">
-                  <button
-                    type="submit"
-                    className="flex-1 py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-black text-xs cursor-pointer shadow-lg shadow-slate-900/10 transition-all active:scale-95"
-                  >
-                    {t.saveBtn}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowPinModal(false);
-                      setPinInput("");
-                      setPinError(null);
-                    }}
-                    className="flex-1 py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 font-bold text-xs cursor-pointer transition-all"
-                  >
-                    {t.cancelBtn}
-                  </button>
-                </div>
-              </form>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
 
       {/* Full Manager Settings Modal */}
       <AnimatePresence>

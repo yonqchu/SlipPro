@@ -1,4 +1,4 @@
 {
-  "version": "2.1.8",
-  "releaseNotes": "Hide online totals from PDF report and timeline."
+  "version": "2.1.9",
+  "releaseNotes": "Removed PIN requirements for settings."
 }
