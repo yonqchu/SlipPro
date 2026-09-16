@@ -1583,10 +1583,11 @@ export default function App() {
         setShowManagerModal(false);
       }
       html5QrCode.clear();
-    } catch (err) {
-      console.error(err);
-      setScanError(t.scanFailed);
-      triggerToast("QR decoding failed");
+    } catch (err: any) {
+      console.warn("QR Scan error:", err);
+      const isNotFound = err?.message?.includes("No MultiFormat Readers") || err?.includes?.("No MultiFormat Readers");
+      setScanError(isNotFound ? t.scanFailed : "QR decoding failed");
+      triggerToast(isNotFound ? t.scanFailed : "QR decoding failed");
     }
   };
 
@@ -1615,7 +1616,7 @@ export default function App() {
           }
         );
       } catch (err: any) {
-        console.error(err);
+        console.warn("Camera scan error:", err);
         setScanError("Camera scan failed. Use QR file import instead.");
         setIsCameraScanning(false);
       }
