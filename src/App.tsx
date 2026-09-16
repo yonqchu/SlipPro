@@ -58,7 +58,6 @@ import {
   setTimezone,
 } from "./dailyStock";
 import { QuickRestockModal } from "./components/QuickRestockModal";
-import { CakeChart } from "./components/CakeChart";
 import { DailyStockTable, DailyStockRow } from "./components/DailyStockTable";
 import { DailyTimeline, TimelineEvent } from "./components/DailyTimeline";
 import { generateDailyPdfReport } from "./utils/pdfReport";
@@ -559,7 +558,7 @@ export default function App() {
   const [copySuccess, setCopySuccess] = useState(false);
 
   // Phase 2 State Declarations
-  const [activeTab, setActiveTab] = useState<"register" | "history" | "checkout" | "zreport">("register");
+  const [activeTab, setActiveTab] = useState<"register" | "history" | "checkout" | "zreport" | "restock">("register");
   const [showPinModal, setShowPinModal] = useState(false);
   const [pinInput, setPinInput] = useState("");
   const [pinError, setPinError] = useState<string | null>(null);
@@ -593,9 +592,13 @@ export default function App() {
 
   // Daily Stock & Restock Reporting States
   const [selectedReportDate, setSelectedReportDate] = useState<string>(getLocalDateString());
+  const [selectedHistoryDate, setSelectedHistoryDate] = useState<string>(getLocalDateString());
+  const [historyPage, setHistoryPage] = useState<number>(1);
   const [restockEvents, setRestockEvents] = useState<RestockEvent[]>([]);
   const [restockModalOpen, setRestockModalOpen] = useState(false);
   const [preselectedRestockItemId, setPreselectedRestockItemId] = useState<string | null>(null);
+  
+  const [menuSearchQuery, setMenuSearchQuery] = useState("");
 
   // Phase 3 State Declarations
   const [showClearShiftConfirm, setShowClearShiftConfirm] = useState(false);
@@ -1397,7 +1400,7 @@ export default function App() {
   const transferTotal = transferTx.reduce((sum, tx) => sum + (tx.total || 0), 0);
   const onlineTx = dayTx.filter(tx => tx && tx.paymentMethod === "ออนไลน์");
   const onlineTotal = onlineTx.reduce((sum, tx) => sum + (tx.total || 0), 0);
-  const totalEarnings = cashTotal + transferTotal + onlineTotal;
+  const totalEarnings = cashTotal + transferTotal; // Exclude onlineTotal since online prices vary
   const totalOrders = dayTx.length;
   const totalRestockedUnits = dayRestocks.reduce((sum, r) => sum + (r.amount || 0), 0);
   const totalRestockEventsCount = dayRestocks.length;
@@ -1636,29 +1639,12 @@ export default function App() {
   const lowStockItemsCount = lowStockMenuItems.length;
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col items-center justify-start py-0 md:py-8 px-0 sm:px-4 font-sans selection:bg-slate-900 selection:text-white">
-      
-      {/* Subtle modern geometric grid background */}
-      <div className="absolute inset-0 bg-[linear-gradient(to_right,#e2e8f0_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f0_1px,transparent_1px)] bg-[size:3rem_3rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] pointer-events-none z-0"></div>
-      
-      {/* Container simulating a mobile device for desktop, or stretching seamlessly on mobile */}
-      <div className="w-full max-w-md bg-white md:rounded-[3rem] shadow-[0_25px_60px_-15px_rgba(15,23,42,0.15)] md:border-[10px] md:border-slate-900 flex flex-col min-h-screen md:min-h-[850px] overflow-hidden relative z-10 transition-all">
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans selection:bg-slate-900 selection:text-white">
+      {/* Modern POS App Container */}
+      <div className="w-full max-w-[1600px] mx-auto bg-white shadow-xl flex flex-col min-h-screen relative z-10 transition-all">
         
-        {/* Device Status Bar Decor (Desktop Only) */}
-        <div className="hidden md:flex items-center justify-between px-8 pt-4 pb-1 text-xs text-slate-900 font-mono select-none bg-white">
-          <span className="font-bold">9:41 AM</span>
-          <div className="w-20 h-4 bg-slate-900 rounded-full mx-auto relative -top-1.5 flex items-center justify-center">
-            <div className="w-2.5 h-2.5 rounded-full bg-slate-800"></div>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-3.5 h-3.5 rounded-full bg-slate-900 flex items-center justify-center text-[8px] text-white font-extrabold">5G</div>
-            <div className="w-3 h-3 bg-slate-900 rounded-full"></div>
-            <div className="w-3 h-3 bg-slate-900 rounded-full opacity-20"></div>
-          </div>
-        </div>
-
-        {/* Dynamic Mobile Header */}
-        <header className="sticky top-0 bg-white/95 backdrop-blur-md border-b border-slate-100 px-6 py-4 flex items-center justify-between z-30">
+        {/* Dynamic Header */}
+        <header className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between z-30">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-slate-900 flex items-center justify-center shadow-md">
               <Share2 className="w-4 h-4 text-white stroke-[2.5]" />
@@ -1727,25 +1713,39 @@ export default function App() {
               ? 'pb-24' 
               : activeTab === 'history' 
                 ? 'pb-14' 
-                : 'px-6 py-6 space-y-6 pb-32'
+                : activeTab === 'restock'
+                  ? 'pb-14'
+                  : 'px-6 py-6 space-y-6 pb-32'
         }`}>
           
           {activeTab === "register" && (
             <div className="space-y-6">
           
-          {/* Quick-Tap Grid of 4 Menu Items */}
-          <section className="space-y-3">
-            <div className="flex items-center justify-between">
+          {/* Quick-Tap Grid of Menu Items */}
+          <section className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <h2 id="menu-label" className="text-[10px] uppercase tracking-widest text-slate-400 font-bold flex items-center gap-1.5">
                 {t.quickTapMenu}
               </h2>
-              <span className="text-[10px] text-slate-400 font-mono">
-                {t.tapToOrder}
-              </span>
+              <div className="relative w-full sm:w-64">
+                <input
+                  type="text"
+                  placeholder={lang === "en" ? "Search items..." : "ค้นหาเมนู..."}
+                  value={menuSearchQuery}
+                  onChange={(e) => setMenuSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-slate-900 transition-all shadow-sm"
+                />
+                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                </div>
+              </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3" id="menu-grid">
-              {menuItems.map(item => {
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4" id="menu-grid">
+              {menuItems.filter(item => 
+                item.nameEN.toLowerCase().includes(menuSearchQuery.toLowerCase()) || 
+                item.nameTH.toLowerCase().includes(menuSearchQuery.toLowerCase())
+              ).map(item => {
                 const isOutOfStock = item.trackStock && item.currentStock <= 0;
                 const isLowStock = item.trackStock && item.currentStock > 0 && item.currentStock <= item.lowStockThreshold;
                 const itemLabel = lang === "en" ? item.nameEN : item.nameTH;
@@ -2191,7 +2191,20 @@ export default function App() {
             </div>
           )}
 
-          {activeTab === "history" && (
+          {activeTab === "history" && (() => {
+            const historyDayTx = safeTransactions.filter(tx => {
+              if (!tx) return false;
+              if (tx.date) return tx.date === selectedHistoryDate;
+              const txDate = tx.timestamp ? tx.timestamp.split(" @ ")[0] : "";
+              return txDate === selectedHistoryDate || (typeof tx.timestamp === "string" && tx.timestamp.includes(selectedHistoryDate));
+            });
+            const pageSize = 10;
+            const totalPages = Math.ceil(historyDayTx.length / pageSize) || 1;
+            const currentHistoryPage = Math.min(historyPage, totalPages);
+            const startIndex = (currentHistoryPage - 1) * pageSize;
+            const visibleTx = historyDayTx.slice(startIndex, startIndex + pageSize);
+
+            return (
             <div className="flex flex-col min-h-full bg-slate-50">
               <div className="w-full p-5 flex items-center justify-between bg-slate-900 text-white sticky top-0 z-10 shadow-md">
                   <div className="flex items-center gap-3">
@@ -2201,20 +2214,72 @@ export default function App() {
                         {t.transactionHistory}
                       </h2>
                       <p className="text-[10px] text-slate-300 font-semibold uppercase font-mono mt-0.5">
-                        {transactions.length} {lang === "th" ? "รายการ" : "LOGS"}
+                        {historyDayTx.length} {lang === "th" ? "รายการ" : "LOGS"}
                       </p>
                     </div>
                   </div>
                 </div>
 
+                {/* Date Navigation Bar for History */}
+                <div className="bg-white border-b border-slate-200/80 p-3 flex items-center justify-between gap-2">
+                  <button
+                    onClick={() => {
+                      const [y, m, d] = selectedHistoryDate.split("-").map(Number);
+                      const dt = new Date(y, m - 1, d);
+                      dt.setDate(dt.getDate() - 1);
+                      setSelectedHistoryDate(getLocalDateString(dt));
+                      setHistoryPage(1);
+                    }}
+                    className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all cursor-pointer flex items-center justify-center"
+                  >
+                    <ChevronLeft className="w-4 h-4 stroke-[2.5]" />
+                  </button>
+
+                  <div className="flex-1 flex items-center justify-center gap-2">
+                    <div className="relative flex items-center">
+                      <Calendar className="w-4 h-4 text-slate-500 absolute left-3 pointer-events-none" />
+                      <input
+                        type="date"
+                        value={selectedHistoryDate}
+                        max={getLocalDateString()}
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            setSelectedHistoryDate(e.target.value);
+                            setHistoryPage(1);
+                          }
+                        }}
+                        className="pl-9 pr-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 text-xs font-bold font-mono focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      const [y, m, d] = selectedHistoryDate.split("-").map(Number);
+                      const dt = new Date(y, m - 1, d);
+                      dt.setDate(dt.getDate() + 1);
+                      setSelectedHistoryDate(getLocalDateString(dt));
+                      setHistoryPage(1);
+                    }}
+                    disabled={selectedHistoryDate >= getLocalDateString()}
+                    className={`p-2 rounded-xl border transition-all flex items-center justify-center ${
+                      selectedHistoryDate >= getLocalDateString()
+                        ? "bg-slate-50 text-slate-300 border-slate-100 cursor-not-allowed"
+                        : "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200 cursor-pointer"
+                    }`}
+                  >
+                    <ChevronRight className="w-4 h-4 stroke-[2.5]" />
+                  </button>
+                </div>
+
                 <div className="bg-white divide-y divide-slate-100 flex-1" id="transaction-history-list">
-                  {transactions.length === 0 ? (
+                  {historyDayTx.length === 0 ? (
                     <div className="p-10 text-center flex flex-col items-center justify-center space-y-3 opacity-60">
                       <History className="w-8 h-8 text-slate-300" />
                       <p className="text-sm text-slate-400 italic font-medium">{t.noTransactions}</p>
                     </div>
                   ) : (
-                    transactions.map((tx, idx) => {
+                    visibleTx.map((tx, idx) => {
                       const isTransfer = tx.paymentMethod === "เงินโอน" || (!tx.paymentMethod && !!tx.slipThumbnail);
                       return (
                         <div id={`tx-${tx.id}`} key={tx.id || idx} className="p-5 space-y-3.5 hover:bg-slate-50/50 transition-colors">
@@ -2236,7 +2301,7 @@ export default function App() {
                               </span>
                             </div>
                             <span className="text-sm font-mono font-black text-slate-900 bg-slate-100 text-slate-900 px-2.5 py-1 rounded-lg border border-slate-200">
-                              {t.thb}{tx.total}
+                              {tx.paymentMethod === "ออนไลน์" ? (lang === "th" ? "ไม่ระบุ" : "N/A") : `${t.thb}${tx.total}`}
                             </span>
                           </div>
 
@@ -2322,9 +2387,33 @@ export default function App() {
                       );
                     })
                   )}
+                  
+                  {/* Pagination Controls */}
+                  {totalPages > 1 && (
+                    <div className="p-4 border-t border-slate-100 flex items-center justify-between bg-slate-50">
+                      <button
+                        disabled={currentHistoryPage <= 1}
+                        onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
+                        className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                      >
+                        {lang === "th" ? "ก่อนหน้า" : "Prev"}
+                      </button>
+                      <span className="text-xs font-mono font-bold text-slate-500">
+                        {currentHistoryPage} / {totalPages}
+                      </span>
+                      <button
+                        disabled={currentHistoryPage >= totalPages}
+                        onClick={() => setHistoryPage(p => Math.min(totalPages, p + 1))}
+                        className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                      >
+                        {lang === "th" ? "ถัดไป" : "Next"}
+                      </button>
+                    </div>
+                  )}
                 </div>
             </div>
-          )}
+            );
+          })()}
 
 
 
@@ -2472,10 +2561,10 @@ export default function App() {
                       <span>{t.onlineIncome}</span>
                     </div>
                     <p className="text-lg font-black font-mono text-purple-600 mt-1.5">
-                      {t.thb}{onlineTotal}
+                      {lang === "th" ? "ไม่ระบุ" : "N/A"}
                     </p>
                     <p className="text-[9px] text-slate-400 font-mono mt-0.5 font-semibold">
-                      {onlineTx.length} {lang === "th" ? "บิล" : "tx"}
+                      {onlineTx.length} {lang === "th" ? "ออเดอร์" : "orders"}
                     </p>
                   </div>
 
@@ -2494,104 +2583,6 @@ export default function App() {
                   </div>
                 </div>
               </div>
-
-              {/* Quick Restock Action Bar */}
-              <div className="bg-emerald-50 border border-emerald-200/80 rounded-2xl p-4 flex items-center justify-between shadow-sm">
-                <div className="space-y-0.5">
-                  <h4 className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
-                    <Boxes className="w-4 h-4 text-emerald-600" />
-                    <span>{t.quickRestock}</span>
-                  </h4>
-                  <p className="text-[10px] text-emerald-700 font-medium">
-                    {lang === "th"
-                      ? "บันทึกจำนวนของที่เติมระหว่างวันเพื่อคำนวณคลังเปิด-ปิด"
-                      : "Record stock added during the shift for daily balance"}
-                  </p>
-                </div>
-                <button
-                  id="zreport-quick-restock-btn"
-                  onClick={() => {
-                    setPreselectedRestockItemId(null);
-                    setRestockModalOpen(true);
-                  }}
-                  className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 shadow-sm cursor-pointer transition-all active:scale-95 shrink-0"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>{lang === "th" ? "เติมสต็อก" : "Restock"}</span>
-                </button>
-              </div>
-
-              {/* Cake Chart: Best Sellers */}
-              <CakeChart
-                slices={cakeSlices}
-                currencySymbol={t.thb}
-                totalLabel={t.totalAmount}
-                title={t.bestSellerCakeChart}
-                lang={lang}
-              />
-
-              {/* Daily Stock Balance Table */}
-              <DailyStockTable
-                rows={dailyStockRows}
-                lang={lang}
-                onQuickRestock={(itemId) => {
-                  setPreselectedRestockItemId(itemId);
-                  setRestockModalOpen(true);
-                }}
-              />
-
-              {/* Activity Timeline (Orders & Restocks) */}
-              <DailyTimeline
-                events={dayTimelineEvents}
-                lang={lang}
-                currencySymbol={t.thb}
-                onViewSlip={(img) => setFullScreenImage(img)}
-              />
-
-              {/* Procurement / Shopping Section */}
-              {(lowStockMenuItems.length > 0 || customShoppingList.length > 0) && (
-                <div className="bg-white border border-slate-200/80 rounded-2xl p-4 space-y-3 shadow-sm">
-                  <h4 className="text-[10px] uppercase tracking-widest text-slate-400 font-black flex items-center gap-1.5 border-b border-slate-100 pb-2">
-                    <ShoppingCart className="w-3.5 h-3.5 text-slate-900" />
-                    <span>{t.shoppingListTitle}</span>
-                  </h4>
-                  <div className="space-y-2">
-                    {lowStockMenuItems.map(it => (
-                      <div key={it.id} className="p-2.5 rounded-xl bg-red-50 border border-red-200 flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xl">{it.image}</span>
-                          <div>
-                            <p className="font-bold text-red-900">{lang === "en" ? it.nameEN : it.nameTH}</p>
-                            <p className="text-[10px] text-red-600 font-mono font-semibold">
-                              {t.stockLabel}: {it.currentStock} / {t.minThreshold}: {it.lowStockThreshold}
-                            </p>
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => {
-                            setPreselectedRestockItemId(it.id);
-                            setRestockModalOpen(true);
-                          }}
-                          className="px-2 py-1 rounded-lg bg-red-600 hover:bg-red-700 text-white font-bold text-[10px] cursor-pointer"
-                        >
-                          + {lang === "th" ? "เติม" : "Restock"}
-                        </button>
-                      </div>
-                    ))}
-                    {customShoppingList.map((item, idx) => (
-                      <div key={idx} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
-                        <span className="font-medium text-slate-700">• {item}</span>
-                        <button
-                          onClick={() => handleRemoveCustomShoppingItem(idx)}
-                          className="text-slate-400 hover:text-red-600 p-1 cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
 
               {/* Action Buttons: PDF Download & Clear Shift */}
               <div className="grid grid-cols-1 gap-3 pt-2">
@@ -2623,10 +2614,154 @@ export default function App() {
             </div>
           )}
 
+          {activeTab === "restock" && (
+            <div className="flex flex-col min-h-full bg-slate-50 w-full">
+              <div className="w-full p-5 flex items-center justify-between bg-slate-900 text-white sticky top-0 z-10 shadow-md">
+                <div className="flex items-center gap-3">
+                  <PackagePlus className="w-5 h-5 text-emerald-400" />
+                  <div>
+                    <h2 className="text-sm font-bold uppercase tracking-wider">
+                      {lang === "th" ? "จัดการคลังสินค้า" : "Stock Management"}
+                    </h2>
+                    <p className="text-[10px] text-slate-300 font-semibold uppercase font-mono mt-0.5">
+                      {selectedReportDate}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Date Navigation for Restock */}
+              <div className="bg-white border-b border-slate-200/80 p-3 flex items-center justify-between gap-2">
+                <button
+                  onClick={() => handleShiftDate(-1)}
+                  className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all cursor-pointer flex items-center justify-center"
+                >
+                  <ChevronLeft className="w-4 h-4 stroke-[2.5]" />
+                </button>
+
+                <div className="flex-1 flex items-center justify-center gap-2">
+                  <div className="relative flex items-center">
+                    <Calendar className="w-4 h-4 text-slate-500 absolute left-3 pointer-events-none" />
+                    <input
+                      type="date"
+                      value={selectedReportDate}
+                      max={getLocalDateString()}
+                      onChange={(e) => e.target.value && setSelectedReportDate(e.target.value)}
+                      className="pl-9 pr-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 text-xs font-bold font-mono focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => handleShiftDate(1)}
+                  disabled={selectedReportDate >= getLocalDateString()}
+                  className={`p-2 rounded-xl border transition-all flex items-center justify-center ${
+                    selectedReportDate >= getLocalDateString()
+                      ? "bg-slate-50 text-slate-300 border-slate-100 cursor-not-allowed"
+                      : "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200 cursor-pointer"
+                  }`}
+                >
+                  <ChevronRight className="w-4 h-4 stroke-[2.5]" />
+                </button>
+              </div>
+
+              <div className="p-4 space-y-6">
+                {/* Quick Restock Action Bar */}
+                <div className="bg-emerald-50 border border-emerald-200/80 rounded-2xl p-4 flex items-center justify-between shadow-sm">
+                  <div className="space-y-0.5">
+                    <h4 className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                      <Boxes className="w-4 h-4 text-emerald-600" />
+                      <span>{t.quickRestock}</span>
+                    </h4>
+                    <p className="text-[10px] text-emerald-700 font-medium">
+                      {lang === "th"
+                        ? "บันทึกจำนวนของที่เติมระหว่างวันเพื่อคำนวณคลังเปิด-ปิด"
+                        : "Record stock added during the shift for daily balance"}
+                    </p>
+                  </div>
+                  <button
+                    id="zreport-quick-restock-btn"
+                    onClick={() => {
+                      setPreselectedRestockItemId(null);
+                      setRestockModalOpen(true);
+                    }}
+                    className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 shadow-sm cursor-pointer transition-all active:scale-95 shrink-0"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>{lang === "th" ? "เติมสต็อก" : "Restock"}</span>
+                  </button>
+                </div>
+
+                {/* Daily Stock Balance Table */}
+                <DailyStockTable
+                  rows={dailyStockRows}
+                  lang={lang}
+                  onQuickRestock={(itemId) => {
+                    setPreselectedRestockItemId(itemId);
+                    setRestockModalOpen(true);
+                  }}
+                />
+
+                {/* Activity Timeline (Orders & Restocks) */}
+                <DailyTimeline
+                  events={dayTimelineEvents}
+                  lang={lang}
+                  currencySymbol={t.thb}
+                  onViewSlip={(img) => setFullScreenImage(img)}
+                />
+
+                {/* Procurement / Shopping Section */}
+                {(lowStockMenuItems.length > 0 || customShoppingList.length > 0) && (
+                  <div className="bg-white border border-slate-200/80 rounded-2xl p-4 space-y-3 shadow-sm">
+                    <h4 className="text-[10px] uppercase tracking-widest text-slate-400 font-black flex items-center gap-1.5 border-b border-slate-100 pb-2">
+                      <ShoppingCart className="w-3.5 h-3.5 text-slate-900" />
+                      <span>{t.shoppingListTitle}</span>
+                    </h4>
+                    <div className="space-y-2">
+                      {lowStockMenuItems.map(it => (
+                        <div key={it.id} className="p-2.5 rounded-xl bg-red-50 border border-red-200 flex items-center justify-between text-xs">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xl">{it.image}</span>
+                            <div>
+                              <p className="font-bold text-red-900">{lang === "en" ? it.nameEN : it.nameTH}</p>
+                              <p className="text-[10px] text-red-600 font-mono font-semibold">
+                                {t.stockLabel}: {it.currentStock} / {t.minThreshold}: {it.lowStockThreshold}
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setPreselectedRestockItemId(it.id);
+                              setRestockModalOpen(true);
+                            }}
+                            className="px-2 py-1 rounded-lg bg-red-600 hover:bg-red-700 text-white font-bold text-[10px] cursor-pointer"
+                          >
+                            + {lang === "th" ? "เติม" : "Restock"}
+                          </button>
+                        </div>
+                      ))}
+                      {customShoppingList.map((item, idx) => (
+                        <div key={idx} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
+                          <span className="font-medium text-slate-700">• {item}</span>
+                          <button
+                            onClick={() => handleRemoveCustomShoppingItem(idx)}
+                            className="text-slate-400 hover:text-red-600 p-1 cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
         </main>
 
-        {/* Modern Mobile Tab Navigation Footer */}
-        <div className="absolute bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-slate-100 px-5 py-3 flex flex-col gap-2.5 z-20">
+        {/* Modern Tab Navigation Footer */}
+        <div className="sticky bottom-0 bg-white/95 backdrop-blur-md border-t border-slate-200 px-6 py-4 flex flex-col gap-3 z-40">
           {activeTab === "register" && (
             <button
               onClick={() => setActiveTab("checkout")}
@@ -2690,6 +2825,17 @@ export default function App() {
             >
               <BarChart3 className="w-5 h-5 stroke-[2.5]" />
               <span>{t.tabZReport}</span>
+            </button>
+
+            <button
+              id="tab-restock-btn"
+              onClick={() => setActiveTab("restock")}
+              className={`flex flex-col items-center gap-1 cursor-pointer transition-all ${
+                activeTab === "restock" ? "text-slate-900 font-black scale-105" : "hover:text-slate-600"
+              }`}
+            >
+              <PackagePlus className="w-5 h-5 stroke-[2.5]" />
+              <span>{lang === "th" ? "คลัง" : "Stock"}</span>
             </button>
           </div>
           )}

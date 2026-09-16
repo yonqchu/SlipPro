@@ -7,7 +7,7 @@ export interface TimelineSaleEvent {
   id: string;
   time: string;
   rawTimestamp: number;
-  paymentMethod: "เงินสด" | "เงินโอน";
+  paymentMethod: "เงินสด" | "เงินโอน" | "ออนไลน์";
   total: number;
   items: {
     nameTH: string;

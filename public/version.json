@@ -1,6 +1,6 @@
 {
-  "version": "1.7.3",
-  "buildTime": "2026-09-16T04:15:00Z",
-  "cacheName": "slippro-cache-v22",
-  "releaseNotes": "Fixed OOM crash on lower-end devices during photo capture."
+  "version": "2.1.0",
+  "buildTime": "2026-09-16T10:40:00Z",
+  "cacheName": "slippro-cache-v24",
+  "releaseNotes": "Added history pagination, dedicated Restock tab, clean PDF."
 }
