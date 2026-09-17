@@ -983,6 +983,19 @@ export default function App() {
   };
 
   // Clear cart
+  const handleEditPaymentMethod = (txId: string, newMethod: "เงินสด" | "เงินโอน" | "ออนไลน์") => {
+    setTransactions(prev => {
+      const updated = prev.map(t => {
+        if (t.id === txId) {
+          return { ...t, paymentMethod: newMethod };
+        }
+        return t;
+      });
+      localStorage.setItem("slippro_transactions_v1", JSON.stringify(updated));
+      return updated;
+    });
+  };
+
   const handleClearCart = () => {
     setCart([]);
   };
@@ -1456,11 +1469,12 @@ export default function App() {
 
   const dayRestocks = safeRestockEvents.filter(r => r && r.date === selectedReportDate);
 
-  const cashTx = dayTx.filter(tx => tx && tx.paymentMethod === "เงินสด");
+  const getPaymentMethod = (tx: any) => tx.paymentMethod || (tx.slipThumbnail ? "เงินโอน" : "เงินสด");
+  const cashTx = dayTx.filter(tx => tx && getPaymentMethod(tx) === "เงินสด");
   const cashTotal = cashTx.reduce((sum, tx) => sum + (tx.total || 0), 0);
-  const transferTx = dayTx.filter(tx => tx && tx.paymentMethod === "เงินโอน");
+  const transferTx = dayTx.filter(tx => tx && getPaymentMethod(tx) === "เงินโอน");
   const transferTotal = transferTx.reduce((sum, tx) => sum + (tx.total || 0), 0);
-  const onlineTx = dayTx.filter(tx => tx && tx.paymentMethod === "ออนไลน์");
+  const onlineTx = dayTx.filter(tx => tx && getPaymentMethod(tx) === "ออนไลน์");
   const onlineTotal = onlineTx.reduce((sum, tx) => sum + (tx.total || 0), 0);
   const totalEarnings = cashTotal + transferTotal; // Exclude onlineTotal since online prices vary
   const totalOrders = dayTx.length;
@@ -1634,7 +1648,9 @@ export default function App() {
       if (!hiddenContainer) {
         hiddenContainer = document.createElement("div");
         hiddenContainer.id = "qr-reader-hidden";
-        hiddenContainer.style.display = "none";
+        hiddenContainer.style.position = "absolute";
+        hiddenContainer.style.top = "-9999px";
+        hiddenContainer.style.visibility = "hidden";
         document.body.appendChild(hiddenContainer);
       }
 
@@ -1664,7 +1680,7 @@ export default function App() {
           { facingMode: "environment" },
           {
             fps: 10,
-            qrbox: { width: 250, height: 250 }
+            qrbox: { width: 200, height: 200 }
           },
           (decodedText) => {
             const success = importConfigJson(decodedText);
@@ -2403,16 +2419,22 @@ export default function App() {
                                 <Clock className="w-3.5 h-3.5" />
                                 {tx.timestamp}
                               </span>
-                              {/* Payment Method Badge */}
-                              <span className={`inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full border ${
-                                tx.paymentMethod === "ออนไลน์"
-                                  ? "bg-purple-50 text-purple-700 border-purple-200"
-                                  : isTransfer
-                                    ? "bg-blue-50 text-blue-700 border-blue-200"
-                                    : "bg-emerald-50 text-emerald-700 border-emerald-200"
-                              }`}>
-                                {tx.paymentMethod === "ออนไลน์" ? (lang === "th" ? "🌐 ออนไลน์" : "🌐 Online") : isTransfer ? (lang === "th" ? "📲 เงินโอน" : "📲 Transfer") : (lang === "th" ? "💵 เงินสด" : "💵 Cash")}
-                              </span>
+                              {/* Payment Method Badge (Editable) */}
+                              <select
+                                value={tx.paymentMethod || (isTransfer ? "เงินโอน" : "เงินสด")}
+                                onChange={(e) => handleEditPaymentMethod(tx.id, e.target.value as "เงินสด" | "เงินโอน" | "ออนไลน์")}
+                                className={`inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full border focus:outline-none appearance-none cursor-pointer ${
+                                  tx.paymentMethod === "ออนไลน์"
+                                    ? "bg-purple-50 text-purple-700 border-purple-200"
+                                    : isTransfer
+                                      ? "bg-blue-50 text-blue-700 border-blue-200"
+                                      : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                }`}
+                              >
+                                <option value="เงินสด">💵 {lang === "th" ? "เงินสด" : "Cash"}</option>
+                                <option value="เงินโอน">📲 {lang === "th" ? "เงินโอน" : "Transfer"}</option>
+                                <option value="ออนไลน์">🌐 {lang === "th" ? "ออนไลน์" : "Online"}</option>
+                              </select>
                             </div>
                             <span className="text-sm font-mono font-black text-slate-900 bg-slate-100 text-slate-900 px-2.5 py-1 rounded-lg border border-slate-200">
                               {tx.paymentMethod === "ออนไลน์" ? (lang === "th" ? "ไม่ระบุ" : "N/A") : `${t.thb}${tx.total}`}
