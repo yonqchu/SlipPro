@@ -1,4 +1,4 @@
 {
-  "version": "2.3.3",
-  "releaseNotes": "Placed payment method and slip badges together on a new line below timestamp and order total for cleaner layout."
+  "version": "2.3.4",
+  "releaseNotes": "Moved recovered sales (กู้คืนยอดขาย) indicator to the new line alongside payment method and slip badges."
 }

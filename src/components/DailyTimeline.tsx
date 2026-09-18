@@ -16,6 +16,7 @@ export interface TimelineSaleEvent {
     quantity: number;
   }[];
   hasSlip: boolean;
+  isRecovered?: boolean;
 }
 
 export interface TimelineRestockEvent {
@@ -128,6 +129,11 @@ export const DailyTimeline: React.FC<DailyTimelineProps> = ({
                       {ev.hasSlip && (
                         <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100/80 px-1.5 py-0.5 rounded-full">
                           {isTh ? "มีสลิป" : "Slip"}
+                        </span>
+                      )}
+                      {ev.isRecovered && (
+                        <span className="text-[9px] font-black text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded-full">
+                          {isTh ? "กู้คืนยอดขาย" : "Recovered"}
                         </span>
                       )}
                     </div>

@@ -111,6 +111,7 @@ interface Transaction {
   slipThumbnail: string | null;
   lowStockAlerts: string[];
   paymentMethod?: "เงินสด" | "เงินโอน" | "ออนไลน์";
+  isRecovered?: boolean;
 }
 
 // Default items
@@ -1218,6 +1219,7 @@ export default function App() {
       date: curDate,
       time: curTime,
       rawTimestamp: Date.now(),
+      isRecovered: true,
       items: lostSales.missingItems.map(m => ({
         nameEN: m.nameEN,
         nameTH: m.nameTH,
@@ -1277,12 +1279,20 @@ export default function App() {
     setEditingItems(tx.items.map(it => ({ ...it })));
     setEditingPaymentMethod(tx.paymentMethod || (tx.slipThumbnail ? "เงินโอน" : "เงินสด"));
     
+    const isRec = Boolean(
+      tx.isRecovered ||
+      tx.id?.startsWith("txn_recovered_") ||
+      tx.timestamp?.includes("กู้คืนยอดขาย") ||
+      tx.timestamp?.includes("Recovered")
+    );
+    const cleanTs = (tx.timestamp || "").replace(/\s*\((?:กู้คืนยอดขาย|Recovered)\)\s*$/i, "").trim();
+
     const parsed = parseDateTimeInput(
-      tx.timestamp || (tx.date && tx.time ? `${tx.date} @ ${tx.time}` : ""),
+      cleanTs || (tx.date && tx.time ? `${tx.date} @ ${tx.time}` : ""),
       tx.date || getLocalDateString(),
       tx.time || getLocalTimeString()
     );
-    setEditingTimestamp(tx.timestamp || parsed.timestamp);
+    setEditingTimestamp(cleanTs || parsed.timestamp);
     setEditingDate(parsed.date);
     setEditingTime(parsed.time);
 
@@ -1427,6 +1437,13 @@ export default function App() {
     );
 
     // Update transactions state with synchronized timestamp, date, time, rawTimestamp, items, total, and paymentMethod
+    const isRec = Boolean(
+      orderToEdit.isRecovered ||
+      orderToEdit.id?.startsWith("txn_recovered_") ||
+      orderToEdit.timestamp?.includes("กู้คืนยอดขาย") ||
+      orderToEdit.timestamp?.includes("Recovered")
+    );
+
     const updatedTransactions = transactions.map(t => {
       if (t.id === orderToEdit.id) {
         return {
@@ -1434,11 +1451,12 @@ export default function App() {
           items: editingItems,
           total: calculatedTotal,
           paymentMethod: editingPaymentMethod,
-          timestamp: parsedDateTime.timestamp,
+          timestamp: isRec ? `${parsedDateTime.timestamp} (${lang === "th" ? "กู้คืนยอดขาย" : "Recovered"})` : parsedDateTime.timestamp,
           date: parsedDateTime.date,
           time: parsedDateTime.time,
           rawTimestamp: parsedDateTime.rawTimestamp,
-          slipThumbnail: editingSlipThumbnail || undefined
+          slipThumbnail: editingSlipThumbnail || undefined,
+          isRecovered: isRec
         };
       }
       return t;
@@ -1938,6 +1956,13 @@ export default function App() {
       rawTs = parseInt(tx.id.replace("txn_", "")) || 0;
     }
 
+    const isRecovered = Boolean(
+      tx.isRecovered ||
+      tx.id?.startsWith("txn_recovered_") ||
+      tx.timestamp?.includes("กู้คืนยอดขาย") ||
+      tx.timestamp?.includes("Recovered")
+    );
+
     return {
       type: "sale",
       id: tx.id,
@@ -1947,6 +1972,7 @@ export default function App() {
       total: tx.total || 0,
       items: Array.isArray(tx.items) ? tx.items : [],
       hasSlip: !!tx.slipThumbnail,
+      isRecovered,
     };
   });
 
@@ -2877,6 +2903,15 @@ export default function App() {
                       const isCash = tx.paymentMethod === "เงินสด" || (!tx.paymentMethod && !tx.slipThumbnail);
                       const isTransfer = tx.paymentMethod === "เงินโอน" || (!tx.paymentMethod && !!tx.slipThumbnail);
                       const isOnline = tx.paymentMethod === "ออนไลน์";
+                      const isRecovered = Boolean(
+                        tx.isRecovered ||
+                        tx.id?.startsWith("txn_recovered_") ||
+                        tx.timestamp?.includes("กู้คืนยอดขาย") ||
+                        tx.timestamp?.includes("Recovered")
+                      );
+                      const cleanTimestamp = (tx.timestamp || "")
+                        .replace(/\s*\((?:กู้คืนยอดขาย|Recovered)\)\s*$/i, "")
+                        .trim();
 
                       return (
                         <div id={`tx-${tx.id}`} key={tx.id || idx} className="relative group">
@@ -2899,7 +2934,7 @@ export default function App() {
                             <div className="flex items-center justify-between gap-2">
                               <span className="text-[11px] sm:text-xs font-mono font-bold text-slate-500 flex items-center gap-1.5">
                                 <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                <span>{tx.timestamp}</span>
+                                <span>{cleanTimestamp}</span>
                               </span>
 
                               <span className="text-xs sm:text-sm font-black font-mono text-emerald-600 shrink-0">
@@ -2907,7 +2942,7 @@ export default function App() {
                               </span>
                             </div>
 
-                            {/* New Line: Payment method & Slip badges together */}
+                            {/* New Line: Payment method, Slip, and Recovered sales badges together */}
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span
                                 className={`text-[9px] font-black px-2 py-0.5 rounded-full inline-flex items-center ${
@@ -2940,6 +2975,12 @@ export default function App() {
                                   <ImageIcon className="w-3 h-3 shrink-0" />
                                   <span>{lang === "th" ? "มีสลิป" : "Slip"}</span>
                                 </button>
+                              )}
+
+                              {isRecovered && (
+                                <span className="text-[9px] font-black text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full inline-flex items-center">
+                                  {lang === "th" ? "กู้คืนยอดขาย" : "Recovered"}
+                                </span>
                               )}
 
                               {tx.lowStockAlerts && tx.lowStockAlerts.length > 0 && (
@@ -3729,9 +3770,18 @@ export default function App() {
               {/* Order quick recap */}
               <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200/80 text-left space-y-2 text-xs">
                 <div className="flex justify-between items-center font-mono">
-                  <span className="text-[11px] text-slate-500">{orderToDelete.timestamp}</span>
+                  <span className="text-[11px] text-slate-500">
+                    {orderToDelete.timestamp?.replace(/\s*\((?:กู้คืนยอดขาย|Recovered)\)\s*$/i, "")}
+                  </span>
                   <span className="font-black text-slate-900 text-sm">฿{orderToDelete.total}</span>
                 </div>
+                {(orderToDelete.isRecovered || orderToDelete.id?.startsWith("txn_recovered_") || orderToDelete.timestamp?.includes("กู้คืนยอดขาย") || orderToDelete.timestamp?.includes("Recovered")) && (
+                  <div>
+                    <span className="text-[9px] font-black text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full inline-flex items-center">
+                      {lang === "th" ? "กู้คืนยอดขาย" : "Recovered"}
+                    </span>
+                  </div>
+                )}
                 <div className="text-[11px] text-slate-600 space-y-1 border-t border-slate-200/60 pt-2">
                   {orderToDelete.items?.map((it, idx) => (
                     <div key={idx} className="flex justify-between items-center">

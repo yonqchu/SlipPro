@@ -69,7 +69,7 @@ export const generateDailyPdfReport = async (params: GeneratePdfParams): Promise
       if (isCash) {
         paymentBadge = isTh ? "💵 เงินสด" : "Cash";
       } else if (isTransfer) {
-        paymentBadge = isTh ? "📲 เงินโอน" : "Transfer";
+        paymentBadge = isTh ? "📲 โอน" : "Transfer";
       } else {
         paymentBadge = isTh ? "🌐 ออนไลน์" : "Online";
       }
@@ -77,6 +77,10 @@ export const generateDailyPdfReport = async (params: GeneratePdfParams): Promise
       const itemsDesc = ev.items
         .map((it) => `${isTh ? it.nameTH : it.nameEN} <span style="color: #64748b">x${it.quantity}</span>`)
         .join(", ");
+
+      const recoveredBadge = ev.isRecovered 
+        ? `<span style="background-color: #fef3c7; color: #92400e; font-weight: 700; font-size: 10px; padding: 1px 6px; border-radius: 9999px;">${isTh ? "กู้คืนยอดขาย" : "Recovered"}</span>` 
+        : "";
 
       return `
         <div style="padding: 12px; margin-bottom: 8px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; page-break-inside: avoid;">
@@ -86,6 +90,7 @@ export const generateDailyPdfReport = async (params: GeneratePdfParams): Promise
               <span style="color: ${badgeTextColor}; font-weight: 700; font-size: 11px;">
                 ${paymentBadge}
               </span>
+              ${recoveredBadge}
             </div>
             <span style="font-weight: 700; color: #0f172a; font-size: 13px;">${isOnline ? (isTh ? "ไม่ระบุ" : "N/A") : `+฿${ev.total.toLocaleString()}`}</span>
           </div>
