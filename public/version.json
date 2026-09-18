@@ -1,4 +1,4 @@
 {
-  "version": "2.2.2",
-  "releaseNotes": "Fix low memory error during photo slip capture, prevent stuck cart items with quota-safe storage, and enable 1-tap recovery of today's sales history."
+  "version": "2.2.6",
+  "releaseNotes": "Fix overlapping elements and enhance layout in Edit Order modal and History transaction actions, with clean multi-row item cards and responsive inputs."
 }

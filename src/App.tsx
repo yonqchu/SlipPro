@@ -37,7 +37,8 @@ import {
   Copy,
   ExternalLink,
   Wifi,
-  Layers
+  Layers,
+  Pencil
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import QRCode from "qrcode";
@@ -70,6 +71,9 @@ import {
   saveSlipToIDB,
   getSlipFromIDB,
   getBackupTransactionsFromIDB,
+  deleteSlipFromIDB,
+  findDuplicateTransactions,
+  DuplicateGroup,
 } from "./utils/storage";
 
 // Types
@@ -377,6 +381,40 @@ const TRANSLATIONS = {
     restoreSalesBtn: "Restore Today's Sales",
     salesRestoredSuccess: "Today's sales history successfully restored!",
     checkAndRecoverSales: "Check & Recover Missing Sales",
+    deleteOrderBtn: "Delete Order",
+    confirmDeleteOrderTitle: "Delete Order?",
+    confirmDeleteOrderDesc: "Are you sure you want to permanently delete this order? All sales totals, earnings, and reports will update immediately.",
+    returnStockCheckbox: "Return items to stock inventory (+{count} items)",
+    returnStockExplanation: "Restores quantities back to stock inventory (recommended for cancellations/refunds; uncheck if deleting duplicate records).",
+    orderDeletedSuccess: "Order deleted! Sales and reports recalculated.",
+    duplicateOrdersDetected: "Detected {count} duplicate orders",
+    duplicateOrdersDesc: "Multiple orders with identical items and totals were detected. Review and remove unwanted duplicate orders.",
+    cleanDuplicatesBtn: "Clean Duplicates",
+    cleanDuplicatesModalTitle: "Review & Clean Duplicate Orders",
+    cleanDuplicatesModalDesc: "The orders below have identical contents, amounts, and dates. Select which duplicate records to delete to correct your sales totals and PDF report.",
+    originalBadge: "Original Record",
+    duplicateBadge: "Duplicate Record",
+    returnStockForDuplicatesCheckbox: "Also return inventory stock for removed duplicates",
+    returnStockForDuplicatesExplanation: "Leave unchecked if duplicate orders were caused by restore or accidental repeat checkouts where physical stock was only deducted once.",
+    deleteSelectedDuplicatesBtn: "Delete Selected ({count})",
+    deleteAllDuplicatesBtn: "Delete All Duplicates ({count})",
+    duplicatesRemovedSuccess: "Successfully removed {count} duplicate orders! Revenue and reports updated.",
+    possibleDuplicateBadge: "Possible Duplicate",
+    editOrderBtn: "Edit",
+    editOrderTitle: "Edit Order",
+    editOrderDesc: "Update items, quantities, price, and payment method for this transaction.",
+    orderItems: "Order Items",
+    addItemToOrder: "+ Add Item",
+    selectItemToAdd: "Select item to add...",
+    adjustStockOnEditCheckbox: "Auto-adjust inventory stock for quantity changes",
+    adjustStockOnEditDesc: "Increasing quantities deducts stock; decreasing restores stock to inventory.",
+    orderUpdatedSuccess: "Order updated successfully! Recalculated sales, stock & reports.",
+    noItemsInOrderError: "An order must contain at least one item.",
+    saveChangesBtn: "Save Changes",
+    dateTimeLabel: "Date & Time",
+    paymentMethodLabel: "Payment Method",
+    totalAmountLabel: "Total Amount",
+    unitPriceLabel: "Unit Price",
   },
   th: {
     appTitle: "SlipPro",
@@ -556,6 +594,40 @@ const TRANSLATIONS = {
     restoreSalesBtn: "กู้คืนประวัติการขายวันนี้",
     salesRestoredSuccess: "กู้คืนประวัติการขายวันนี้เรียบร้อยแล้ว!",
     checkAndRecoverSales: "ตรวจสอบและกู้คืนยอดขายที่ตกหล่น",
+    deleteOrderBtn: "ลบออเดอร์",
+    confirmDeleteOrderTitle: "ยืนยันการลบออเดอร์นี้?",
+    confirmDeleteOrderDesc: "คุณแน่ใจหรือไม่ว่าต้องการลบออเดอร์นี้ออกจากระบบ? ยอดขาย รายได้ และรายงาน PDF ทั้งหมดจะถูกคำนวณใหม่ทันที",
+    returnStockCheckbox: "คืนจำนวนสินค้ากลับเข้าคลังสต็อก (+{count} ชิ้น)",
+    returnStockExplanation: "เพิ่มจำนวนสินค้ากลับเข้าคลังสต็อก (แนะนำสำหรับการยกเลิกหรือคืนเงิน; ไม่ต้องเลือกหากเป็นการลบออเดอร์ซ้ำ)",
+    orderDeletedSuccess: "ลบออเดอร์เรียบร้อยแล้ว! อัปเดตยอดขายและรายงานใหม่ทันที",
+    duplicateOrdersDetected: "ตรวจพบออเดอร์ที่ซ้ำกัน {count} รายการ",
+    duplicateOrdersDesc: "ตรวจพบบิลขายที่มีรายการสินค้าและยอดเงินซ้ำกัน แตะเพื่อตรวจสอบและลบรายการซ้ำ",
+    cleanDuplicatesBtn: "จัดการออเดอร์ซ้ำ",
+    cleanDuplicatesModalTitle: "ตรวจสอบและลบออเดอร์ซ้ำ",
+    cleanDuplicatesModalDesc: "รายการด้านล่างมีสินค้าและยอดเงินเหมือนกันทุกประการ เลือกออเดอร์ที่ต้องการลบเพื่อความถูกต้องของยอดขาย รายได้ และไฟล์ PDF",
+    originalBadge: "บิลหลัก (คงไว้)",
+    duplicateBadge: "บิลซ้ำ (ลบออก)",
+    returnStockForDuplicatesCheckbox: "คืนสต็อกสินค้าสำหรับบิลซ้ำที่ลบออกด้วย",
+    returnStockForDuplicatesExplanation: "ไม่ต้องเลือก หากออเดอร์ซ้ำเกิดจากการกดกู้คืน หรือตัดสต็อกสินค้าจริงไปเพียงครั้งเดียว",
+    deleteSelectedDuplicatesBtn: "ลบรายการซ้ำที่เลือก ({count})",
+    deleteAllDuplicatesBtn: "ลบออเดอร์ซ้ำทั้งหมด ({count})",
+    duplicatesRemovedSuccess: "ลบออเดอร์ที่ซ้ำ {count} บิลเรียบร้อยแล้ว! รายได้และรายงานอัปเดตทันที",
+    possibleDuplicateBadge: "อาจเป็นบิลซ้ำ",
+    editOrderBtn: "แก้ไข",
+    editOrderTitle: "แก้ไขรายการออเดอร์",
+    editOrderDesc: "ปรับปรุงรายการสินค้า จำนวน ราคา และช่องทางการชำระเงินของบิลนี้",
+    orderItems: "รายการสินค้าในบิล",
+    addItemToOrder: "+ เพิ่มสินค้า",
+    selectItemToAdd: "เลือกสินค้าที่ต้องการเพิ่ม...",
+    adjustStockOnEditCheckbox: "ปรับสต็อกสินค้าคงเหลืออัตโนมัติตามจำนวนที่เปลี่ยนแปลง",
+    adjustStockOnEditDesc: "เพิ่มจำนวนจะตัดสต็อกเพิ่ม; ลดจำนวนจะคืนสต็อกกลับเข้าคลัง",
+    orderUpdatedSuccess: "อัปเดตออเดอร์เรียบร้อยแล้ว! คำนวณยอดขาย สต็อก และรายงานใหม่ทันที",
+    noItemsInOrderError: "ออเดอร์ต้องมีสินค้าอย่างน้อย 1 รายการ",
+    saveChangesBtn: "บันทึกการแก้ไข",
+    dateTimeLabel: "วันและเวลา",
+    paymentMethodLabel: "ช่องทางการชำระเงิน",
+    totalAmountLabel: "ยอดเงินรวม",
+    unitPriceLabel: "ราคาต่อหน่วย",
   }
 };
 
@@ -585,6 +657,26 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<"register" | "history" | "checkout" | "zreport" | "restock">("register");
   const [showManagerModal, setShowManagerModal] = useState(false);
   const [managerSubTab, setManagerSubTab] = useState<"profile" | "items" | "sync" | "system">("profile");
+
+  // Order Deletion & Duplicate Order Cleaner States
+  const [orderToDelete, setOrderToDelete] = useState<Transaction | null>(null);
+  const [returnStockOnDelete, setReturnStockOnDelete] = useState(true);
+  const [showDuplicatesModal, setShowDuplicatesModal] = useState(false);
+  const [selectedDuplicateIds, setSelectedDuplicateIds] = useState<string[]>([]);
+  const [returnStockOnDuplicates, setReturnStockOnDuplicates] = useState(false);
+  
+  // Edit Order States
+  const [orderToEdit, setOrderToEdit] = useState<Transaction | null>(null);
+  const [editingItems, setEditingItems] = useState<{
+    nameEN: string;
+    nameTH: string;
+    price: number;
+    quantity: number;
+  }[]>([]);
+  const [editingPaymentMethod, setEditingPaymentMethod] = useState<"เงินสด" | "เงินโอน" | "ออนไลน์">("เงินสด");
+  const [editingTimestamp, setEditingTimestamp] = useState("");
+  const [adjustStockOnEdit, setAdjustStockOnEdit] = useState(true);
+  const [selectedAddItemToEdit, setSelectedAddItemToEdit] = useState("");
   
   // App Version & Update State
   const [updateInfo, setUpdateInfo] = useState<{
@@ -1146,6 +1238,205 @@ export default function App() {
     );
   };
 
+  // Delete single unwanted order and adjust stock if requested
+  const handleDeleteSingleOrder = (tx: Transaction, returnStock: boolean) => {
+    const updated = transactions.filter(t => t.id !== tx.id);
+    setTransactions(updated);
+    safeSaveTransactions(updated);
+
+    deleteSlipFromIDB(tx.id).catch(() => {});
+
+    if (returnStock && Array.isArray(tx.items) && tx.items.length > 0) {
+      const updatedMenuItems = menuItems.map(item => {
+        if (!item.trackStock) return item;
+        const matched = tx.items.filter(
+          it => it && (it.nameEN === item.nameEN || it.nameTH === item.nameTH)
+        );
+        const returnQty = matched.reduce((sum, it) => sum + (it.quantity || 0), 0);
+        if (returnQty > 0) {
+          return {
+            ...item,
+            currentStock: item.currentStock + returnQty
+          };
+        }
+        return item;
+      });
+      setMenuItems(updatedMenuItems);
+      localStorage.setItem("slippro_stock_v2", JSON.stringify(updatedMenuItems));
+    }
+
+    setOrderToDelete(null);
+    triggerToast(t.orderDeletedSuccess);
+  };
+
+  // Bulk / Selective delete duplicate orders
+  const handleDeleteDuplicates = (duplicateIds: string[], returnStock: boolean) => {
+    if (!duplicateIds || duplicateIds.length === 0) return;
+    const idSet = new Set(duplicateIds);
+
+    const deletedTxs = transactions.filter(t => idSet.has(t.id));
+    const updated = transactions.filter(t => !idSet.has(t.id));
+    setTransactions(updated);
+    safeSaveTransactions(updated);
+
+    deletedTxs.forEach(tx => deleteSlipFromIDB(tx.id).catch(() => {}));
+
+    if (returnStock) {
+      const stockAdditionMap: Record<string, number> = {};
+      deletedTxs.forEach(tx => {
+        (tx.items || []).forEach(it => {
+          const key = it.nameEN || it.nameTH || "";
+          stockAdditionMap[key] = (stockAdditionMap[key] || 0) + (it.quantity || 0);
+        });
+      });
+
+      const updatedMenuItems = menuItems.map(item => {
+        if (!item.trackStock) return item;
+        const addEN = stockAdditionMap[item.nameEN] || 0;
+        const addTH = stockAdditionMap[item.nameTH] || 0;
+        const totalAdd = addEN + addTH;
+        if (totalAdd > 0) {
+          return {
+            ...item,
+            currentStock: item.currentStock + totalAdd
+          };
+        }
+        return item;
+      });
+      setMenuItems(updatedMenuItems);
+      localStorage.setItem("slippro_stock_v2", JSON.stringify(updatedMenuItems));
+    }
+
+    setShowDuplicatesModal(false);
+    setSelectedDuplicateIds([]);
+    triggerToast(t.duplicatesRemovedSuccess.replace("{count}", String(deletedTxs.length)));
+  };
+
+  // Edit Order Handlers
+  const handleOpenEditOrder = (tx: Transaction) => {
+    setOrderToEdit(tx);
+    setEditingItems(tx.items.map(it => ({ ...it })));
+    setEditingPaymentMethod(tx.paymentMethod || (tx.slipThumbnail ? "เงินโอน" : "เงินสด"));
+    setEditingTimestamp(tx.timestamp || "");
+    setAdjustStockOnEdit(true);
+    setSelectedAddItemToEdit("");
+  };
+
+  const handleUpdateItemQuantity = (index: number, delta: number) => {
+    setEditingItems(prev => {
+      const copy = [...prev];
+      const newQty = copy[index].quantity + delta;
+      if (newQty <= 0) {
+        return copy.filter((_, i) => i !== index);
+      }
+      copy[index] = { ...copy[index], quantity: newQty };
+      return copy;
+    });
+  };
+
+  const handleUpdateItemPrice = (index: number, newPrice: number) => {
+    setEditingItems(prev => {
+      const copy = [...prev];
+      copy[index] = { ...copy[index], price: Math.max(0, isNaN(newPrice) ? 0 : newPrice) };
+      return copy;
+    });
+  };
+
+  const handleRemoveItemFromEdit = (index: number) => {
+    setEditingItems(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleAddItemToEditingOrder = (menuItemId: string) => {
+    if (!menuItemId) return;
+    const found = menuItems.find(m => m.id === menuItemId);
+    if (!found) return;
+
+    setEditingItems(prev => {
+      const existingIdx = prev.findIndex(it => it.nameEN === found.nameEN || it.nameTH === found.nameTH);
+      if (existingIdx >= 0) {
+        const copy = [...prev];
+        copy[existingIdx] = { ...copy[existingIdx], quantity: copy[existingIdx].quantity + 1 };
+        return copy;
+      }
+      return [
+        ...prev,
+        {
+          nameEN: found.nameEN,
+          nameTH: found.nameTH,
+          price: found.price,
+          quantity: 1
+        }
+      ];
+    });
+    setSelectedAddItemToEdit("");
+  };
+
+  const handleSaveEditOrder = () => {
+    if (!orderToEdit) return;
+    if (editingItems.length === 0) {
+      triggerToast(t.noItemsInOrderError);
+      return;
+    }
+
+    const calculatedTotal = editingItems.reduce((sum, it) => sum + (it.price * it.quantity), 0);
+
+    // Stock adjustment calculation if adjustStockOnEdit is enabled
+    if (adjustStockOnEdit) {
+      const oldQtyMap: Record<string, number> = {};
+      (orderToEdit.items || []).forEach(it => {
+        const keyEN = it.nameEN || "";
+        const keyTH = it.nameTH || "";
+        if (keyEN) oldQtyMap[keyEN] = (oldQtyMap[keyEN] || 0) + (it.quantity || 0);
+        if (keyTH && keyTH !== keyEN) oldQtyMap[keyTH] = (oldQtyMap[keyTH] || 0) + (it.quantity || 0);
+      });
+
+      const newQtyMap: Record<string, number> = {};
+      editingItems.forEach(it => {
+        const keyEN = it.nameEN || "";
+        const keyTH = it.nameTH || "";
+        if (keyEN) newQtyMap[keyEN] = (newQtyMap[keyEN] || 0) + (it.quantity || 0);
+        if (keyTH && keyTH !== keyEN) newQtyMap[keyTH] = (newQtyMap[keyTH] || 0) + (it.quantity || 0);
+      });
+
+      const updatedMenuItems = menuItems.map(item => {
+        if (!item.trackStock) return item;
+        const oldQ = oldQtyMap[item.nameEN] ?? oldQtyMap[item.nameTH] ?? 0;
+        const newQ = newQtyMap[item.nameEN] ?? newQtyMap[item.nameTH] ?? 0;
+        const diff = newQ - oldQ; // positive = sold more, so deduct from currentStock
+        if (diff !== 0) {
+          return {
+            ...item,
+            currentStock: Math.max(0, item.currentStock - diff)
+          };
+        }
+        return item;
+      });
+
+      setMenuItems(updatedMenuItems);
+      localStorage.setItem("slippro_stock_v2", JSON.stringify(updatedMenuItems));
+    }
+
+    // Update transactions state
+    const updatedTransactions = transactions.map(t => {
+      if (t.id === orderToEdit.id) {
+        return {
+          ...t,
+          items: editingItems,
+          total: calculatedTotal,
+          paymentMethod: editingPaymentMethod,
+          timestamp: editingTimestamp || t.timestamp
+        };
+      }
+      return t;
+    });
+
+    setTransactions(updatedTransactions);
+    safeSaveTransactions(updatedTransactions);
+
+    setOrderToEdit(null);
+    triggerToast(t.orderUpdatedSuccess);
+  };
+
   // Calculate cart total
   const cartTotal = cart.reduce((acc, curr) => acc + (curr.menuItem.price * curr.quantity), 0);
 
@@ -1520,6 +1811,13 @@ export default function App() {
   const safeTransactions = Array.isArray(transactions) ? transactions : [];
   const safeRestockEvents = Array.isArray(restockEvents) ? restockEvents : [];
   const safeMenuItems = Array.isArray(menuItems) ? menuItems : [];
+
+  const reportDuplicates = findDuplicateTransactions(safeTransactions, selectedReportDate);
+  const totalReportDuplicatesCount = reportDuplicates.reduce((sum, g) => sum + g.duplicates.length, 0);
+
+  const historyDuplicates = findDuplicateTransactions(safeTransactions, selectedHistoryDate);
+  const totalHistoryDuplicatesCount = historyDuplicates.reduce((sum, g) => sum + g.duplicates.length, 0);
+  const duplicateTxIdSet = new Set(historyDuplicates.flatMap(g => g.duplicates.map(d => d.id)));
 
   const dayTx = safeTransactions.filter(tx => {
     if (!tx) return false;
@@ -2423,6 +2721,10 @@ export default function App() {
               const txDate = tx.timestamp ? tx.timestamp.split(" @ ")[0] : "";
               return txDate === selectedHistoryDate || (typeof tx.timestamp === "string" && tx.timestamp.includes(selectedHistoryDate));
             });
+            const historyDuplicates = findDuplicateTransactions(safeTransactions, selectedHistoryDate);
+            const totalHistoryDuplicatesCount = historyDuplicates.reduce((sum, g) => sum + g.duplicates.length, 0);
+            const duplicateTxIdSet = new Set(historyDuplicates.flatMap(g => g.duplicates.map(d => d.id)));
+
             const pageSize = 10;
             const totalPages = Math.ceil(historyDayTx.length / pageSize) || 1;
             const currentHistoryPage = Math.min(historyPage, totalPages);
@@ -2529,6 +2831,39 @@ export default function App() {
                   </div>
                 )}
 
+                {/* Duplicate Orders Alert Banner in History Tab */}
+                {totalHistoryDuplicatesCount > 0 && (
+                  <div id="history-duplicate-orders-banner" className="m-4 p-4 bg-amber-50 border border-amber-200 rounded-2xl shadow-sm space-y-2.5">
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                        <AlertTriangle className="w-4 h-4 stroke-[2.5]" />
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="text-xs font-bold text-amber-900">
+                          {t.duplicateOrdersDetected.replace("{count}", String(totalHistoryDuplicatesCount))}
+                        </h4>
+                        <p className="text-[11px] text-amber-700 mt-0.5 leading-relaxed">
+                          {t.duplicateOrdersDesc}
+                        </p>
+                        <div className="mt-2.5 flex items-center gap-2">
+                          <button
+                            type="button"
+                            id="history-clean-duplicates-btn"
+                            onClick={() => {
+                              setSelectedDuplicateIds(historyDuplicates.flatMap(g => g.duplicates.map(d => d.id)));
+                              setShowDuplicatesModal(true);
+                            }}
+                            className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center gap-1.5"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>{t.cleanDuplicatesBtn}</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="bg-white divide-y divide-slate-100 flex-1" id="transaction-history-list">
                   {historyDayTx.length === 0 ? (
                     <div className="p-10 text-center flex flex-col items-center justify-center space-y-3 opacity-60">
@@ -2538,6 +2873,7 @@ export default function App() {
                   ) : (
                     visibleTx.map((tx, idx) => {
                       const isTransfer = tx.paymentMethod === "เงินโอน" || (!tx.paymentMethod && !!tx.slipThumbnail);
+                      const isDuplicate = duplicateTxIdSet.has(tx.id);
                       return (
                         <div id={`tx-${tx.id}`} key={tx.id || idx} className="p-5 space-y-3.5 hover:bg-slate-50/50 transition-colors">
                           <div className="flex items-center justify-between">
@@ -2583,7 +2919,7 @@ export default function App() {
                           </div>
 
                           {/* Slip status & actions */}
-                          <div className="flex items-center justify-between pt-3 border-t border-slate-50 text-[10px]">
+                          <div className="flex flex-wrap items-center justify-between gap-2.5 pt-3 border-t border-slate-50 text-[10px]">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-slate-500 flex items-center gap-1.5">
                                 {tx.slipThumbnail ? (
@@ -2606,16 +2942,50 @@ export default function App() {
                               )}
                             </div>
 
-                            {/* Share to LINE Button */}
-                            <button
-                              type="button"
-                              id={`resend-line-${tx.id}`}
-                              onClick={() => handleResendToLine(tx)}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white font-bold text-[11px] cursor-pointer shadow-sm shadow-[#06C755]/20 transition-all active:scale-95"
-                            >
-                              <ExternalLink className="w-3.5 h-3.5 stroke-[2.5]" />
-                              <span>{t.resendToLine}</span>
-                            </button>
+                            {/* Action Buttons: Edit, Delete Order & Share to LINE */}
+                            <div className="flex items-center gap-1.5 flex-wrap ml-auto">
+                              {isDuplicate && (
+                                <span className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-700 bg-amber-100 px-2 py-1 rounded-lg border border-amber-200">
+                                  <AlertTriangle className="w-3 h-3 text-amber-600" />
+                                  {t.possibleDuplicateBadge}
+                                </span>
+                              )}
+
+                              <button
+                                type="button"
+                                id={`edit-order-${tx.id}`}
+                                onClick={() => handleOpenEditOrder(tx)}
+                                title={t.editOrderBtn}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] cursor-pointer border border-slate-200 transition-all active:scale-95 whitespace-nowrap"
+                              >
+                                <Pencil className="w-3.5 h-3.5 text-slate-600" />
+                                <span>{t.editOrderBtn}</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                id={`delete-order-${tx.id}`}
+                                onClick={() => {
+                                  setOrderToDelete(tx);
+                                  setReturnStockOnDelete(!isDuplicate && !tx.id.startsWith("txn_recovered_"));
+                                }}
+                                title={t.deleteOrderBtn}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-[11px] cursor-pointer border border-rose-200/80 transition-all active:scale-95 whitespace-nowrap"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>{t.deleteOrderBtn}</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                id={`resend-line-${tx.id}`}
+                                onClick={() => handleResendToLine(tx)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white font-bold text-[11px] cursor-pointer shadow-sm shadow-[#06C755]/20 transition-all active:scale-95 whitespace-nowrap"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5 stroke-[2.5]" />
+                                <span>{t.resendToLine}</span>
+                              </button>
+                            </div>
                           </div>
 
                           {/* Slip Thumbnail in history */}
@@ -2758,6 +3128,39 @@ export default function App() {
                         >
                           <RotateCcw className="w-3.5 h-3.5" />
                           <span>{t.restoreSalesBtn}</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Duplicate Orders Banner in Z-Report */}
+              {totalReportDuplicatesCount > 0 && (
+                <div id="zreport-duplicate-orders-banner" className="p-4 bg-amber-50 border border-amber-200 rounded-2xl shadow-sm space-y-2.5">
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                      <AlertTriangle className="w-4 h-4 stroke-[2.5]" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="text-xs font-bold text-amber-900">
+                        {t.duplicateOrdersDetected.replace("{count}", String(totalReportDuplicatesCount))}
+                      </h4>
+                      <p className="text-[11px] text-amber-700 mt-0.5 leading-relaxed">
+                        {t.duplicateOrdersDesc}
+                      </p>
+                      <div className="mt-2.5 flex items-center gap-2">
+                        <button
+                          type="button"
+                          id="zreport-clean-duplicates-btn"
+                          onClick={() => {
+                            setSelectedDuplicateIds(reportDuplicates.flatMap(g => g.duplicates.map(d => d.id)));
+                            setShowDuplicatesModal(true);
+                          }}
+                          className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center gap-1.5"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>{t.cleanDuplicatesBtn}</span>
                         </button>
                       </div>
                     </div>
@@ -3330,6 +3733,560 @@ export default function App() {
                 >
                   {t.cancelBtn}
                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete Single Order Confirmation Modal */}
+      <AnimatePresence>
+        {orderToDelete && (
+          <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white border border-slate-200 rounded-[2rem] p-6 max-w-sm w-full space-y-4 shadow-2xl text-center"
+            >
+              <div className="mx-auto w-12 h-12 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center border border-rose-100">
+                <Trash2 className="w-6 h-6 stroke-[2.5]" />
+              </div>
+
+              <div className="space-y-1">
+                <h3 className="text-base font-black tracking-tight text-slate-950">
+                  {t.confirmDeleteOrderTitle}
+                </h3>
+                <p className="text-xs text-slate-500 leading-relaxed font-medium">
+                  {t.confirmDeleteOrderDesc}
+                </p>
+              </div>
+
+              {/* Order quick recap */}
+              <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200/80 text-left space-y-2 text-xs">
+                <div className="flex justify-between items-center font-mono">
+                  <span className="text-[11px] text-slate-500">{orderToDelete.timestamp}</span>
+                  <span className="font-black text-slate-900 text-sm">฿{orderToDelete.total}</span>
+                </div>
+                <div className="text-[11px] text-slate-600 space-y-1 border-t border-slate-200/60 pt-2">
+                  {orderToDelete.items?.map((it, idx) => (
+                    <div key={idx} className="flex justify-between items-center">
+                      <span>{lang === "en" ? it.nameEN : it.nameTH} x{it.quantity}</span>
+                      <span className="font-mono text-slate-400">฿{it.price * it.quantity}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Stock Return Checkbox */}
+              <label className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200/80 cursor-pointer text-left">
+                <input
+                  type="checkbox"
+                  id="return-stock-checkbox"
+                  checked={returnStockOnDelete}
+                  onChange={(e) => setReturnStockOnDelete(e.target.checked)}
+                  className="mt-0.5 rounded text-slate-900 focus:ring-slate-900 cursor-pointer"
+                />
+                <div>
+                  <span className="text-xs font-bold text-slate-800">
+                    {t.returnStockCheckbox.replace(
+                      "{count}",
+                      String(orderToDelete.items?.reduce((s, i) => s + (i.quantity || 0), 0) || 0)
+                    )}
+                  </span>
+                  <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
+                    {t.returnStockExplanation}
+                  </p>
+                </div>
+              </label>
+
+              <div className="flex gap-2.5 pt-1">
+                <button
+                  type="button"
+                  id="confirm-delete-order-btn"
+                  onClick={() => handleDeleteSingleOrder(orderToDelete, returnStockOnDelete)}
+                  className="flex-1 py-3 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs cursor-pointer shadow-lg shadow-rose-600/20 transition-all active:scale-95 flex items-center justify-center gap-1.5"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{t.deleteOrderBtn}</span>
+                </button>
+                <button
+                  type="button"
+                  id="cancel-delete-order-btn"
+                  onClick={() => setOrderToDelete(null)}
+                  className="flex-1 py-3 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 font-bold text-xs cursor-pointer transition-all active:scale-95"
+                >
+                  {t.cancelBtn}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Review & Clean Duplicate Orders Modal */}
+      <AnimatePresence>
+        {showDuplicatesModal && (
+          <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white border border-slate-200 rounded-[2rem] p-6 max-w-lg w-full max-h-[88vh] flex flex-col shadow-2xl text-left"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-100 shrink-0">
+                    <AlertTriangle className="w-5 h-5 stroke-[2.5]" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black tracking-tight text-slate-950">
+                      {t.cleanDuplicatesModalTitle}
+                    </h3>
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      {t.cleanDuplicatesModalDesc}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowDuplicatesModal(false)}
+                  className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Scrollable list of duplicate groups */}
+              <div className="flex-1 overflow-y-auto py-3 space-y-4 pr-1">
+                {(() => {
+                  const targetDuplicates = activeTab === "history" ? historyDuplicates : reportDuplicates;
+                  if (targetDuplicates.length === 0) {
+                    return (
+                      <div className="text-center py-10 text-slate-400 text-xs">
+                        {lang === "th" ? "ไม่พบออเดอร์ซ้ำในวันที่เลือก" : "No duplicate orders found for this date"}
+                      </div>
+                    );
+                  }
+
+                  return targetDuplicates.map((group, gIdx) => {
+                    return (
+                      <div
+                        key={group.fingerprint || gIdx}
+                        className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200/80 space-y-2.5"
+                      >
+                        <div className="flex justify-between items-center border-b border-slate-200/60 pb-2">
+                          <span className="text-xs font-black text-slate-900 line-clamp-1">
+                            {group.itemsSummary}
+                          </span>
+                          <span className="text-xs font-mono font-black text-slate-900 bg-white px-2 py-0.5 rounded-lg border border-slate-200">
+                            ฿{group.total}
+                          </span>
+                        </div>
+
+                        {/* Original Order (Protected) */}
+                        <div className="p-2.5 rounded-xl bg-emerald-50/60 border border-emerald-200/80 flex items-center justify-between text-xs">
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[9px] font-black uppercase px-1.5 py-0.5 bg-emerald-600 text-white rounded">
+                                {t.originalBadge}
+                              </span>
+                              <span className="text-[11px] font-mono text-slate-600 font-semibold">
+                                {group.original.timestamp}
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-slate-500">
+                              {group.original.paymentMethod || "เงินสด"} • ID: {group.original.id}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-emerald-700 font-bold">
+                            {lang === "th" ? "✓ เก็บรักษารายการนี้" : "✓ Kept"}
+                          </span>
+                        </div>
+
+                        {/* Duplicates list */}
+                        <div className="space-y-1.5 pt-1">
+                          {group.duplicates.map(dup => {
+                            const isChecked = selectedDuplicateIds.includes(dup.id);
+                            return (
+                              <div
+                                key={dup.id}
+                                className={`p-2.5 rounded-xl border flex items-center justify-between transition-colors ${
+                                  isChecked
+                                    ? "bg-rose-50/70 border-rose-200"
+                                    : "bg-white border-slate-200/80"
+                                }`}
+                              >
+                                <label className="flex items-center gap-2 cursor-pointer flex-1">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setSelectedDuplicateIds(prev => [...prev, dup.id]);
+                                      } else {
+                                        setSelectedDuplicateIds(prev => prev.filter(id => id !== dup.id));
+                                      }
+                                    }}
+                                    className="rounded text-rose-600 focus:ring-rose-500 cursor-pointer"
+                                  />
+                                  <div className="space-y-0.5">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-[9px] font-black uppercase px-1.5 py-0.5 bg-rose-600 text-white rounded">
+                                        {t.duplicateBadge}
+                                      </span>
+                                      <span className="text-[11px] font-mono text-slate-600">
+                                        {dup.timestamp}
+                                      </span>
+                                    </div>
+                                    <span className="text-[10px] text-slate-400">
+                                      {dup.paymentMethod || "เงินสด"} • ID: {dup.id}
+                                    </span>
+                                  </div>
+                                </label>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteDuplicates([dup.id], returnStockOnDuplicates)}
+                                  className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-100 transition-colors cursor-pointer"
+                                  title={t.deleteOrderBtn}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+
+              {/* Stock Return Option for Duplicates */}
+              <label className="flex items-start gap-2.5 p-3 my-2 rounded-xl bg-slate-50 border border-slate-200/80 cursor-pointer text-left">
+                <input
+                  type="checkbox"
+                  checked={returnStockOnDuplicates}
+                  onChange={(e) => setReturnStockOnDuplicates(e.target.checked)}
+                  className="mt-0.5 rounded text-slate-900 focus:ring-slate-900 cursor-pointer"
+                />
+                <div>
+                  <span className="text-xs font-bold text-slate-800">
+                    {t.returnStockForDuplicatesCheckbox}
+                  </span>
+                  <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
+                    {t.returnStockForDuplicatesExplanation}
+                  </p>
+                </div>
+              </label>
+
+              {/* Footer Actions */}
+              <div className="flex gap-2.5 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  id="confirm-delete-duplicates-btn"
+                  disabled={selectedDuplicateIds.length === 0}
+                  onClick={() => handleDeleteDuplicates(selectedDuplicateIds, returnStockOnDuplicates)}
+                  className={`flex-1 py-3 px-4 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 ${
+                    selectedDuplicateIds.length === 0
+                      ? "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200"
+                      : "bg-rose-600 hover:bg-rose-700 text-white cursor-pointer shadow-lg shadow-rose-600/20"
+                  }`}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>
+                    {t.deleteSelectedDuplicatesBtn.replace("{count}", String(selectedDuplicateIds.length))}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  id="cancel-duplicates-modal-btn"
+                  onClick={() => setShowDuplicatesModal(false)}
+                  className="py-3 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 font-bold text-xs cursor-pointer transition-all active:scale-95"
+                >
+                  {t.cancelBtn}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Edit Order Modal */}
+      <AnimatePresence>
+        {orderToEdit && (
+          <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-3 sm:p-4 z-50 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white border border-slate-200 rounded-3xl p-4 sm:p-6 max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl text-left"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between pb-3.5 border-b border-slate-100 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-slate-100 text-slate-800 flex items-center justify-center border border-slate-200 shrink-0">
+                    <Pencil className="w-5 h-5 stroke-[2.5]" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black tracking-tight text-slate-950">
+                      {t.editOrderTitle}
+                    </h3>
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      {t.editOrderDesc}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  id="close-edit-order-modal"
+                  onClick={() => setOrderToEdit(null)}
+                  className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer shrink-0"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Scrollable Content */}
+              <div className="flex-1 overflow-y-auto min-h-0 py-3.5 space-y-4 pr-1">
+                {/* Timestamp Row */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-slate-400" />
+                    <span>{t.dateTimeLabel}</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="edit-order-timestamp"
+                    value={editingTimestamp}
+                    onChange={(e) => setEditingTimestamp(e.target.value)}
+                    className="w-full px-3 py-2 text-xs font-mono font-medium rounded-xl border border-slate-200 bg-slate-50 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900"
+                  />
+                </div>
+
+                {/* Payment Method Row - Dedicated Full Width Row */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                    {t.paymentMethodLabel}
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      id="edit-payment-cash"
+                      onClick={() => setEditingPaymentMethod("เงินสด")}
+                      className={`py-2.5 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border transition-all cursor-pointer whitespace-nowrap ${
+                        editingPaymentMethod === "เงินสด"
+                          ? "bg-emerald-600 text-white border-emerald-600 shadow-sm shadow-emerald-600/20"
+                          : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                      }`}
+                    >
+                      <span>💵</span>
+                      <span>{lang === "th" ? "เงินสด" : "Cash"}</span>
+                    </button>
+                    <button
+                      type="button"
+                      id="edit-payment-transfer"
+                      onClick={() => setEditingPaymentMethod("เงินโอน")}
+                      className={`py-2.5 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border transition-all cursor-pointer whitespace-nowrap ${
+                        editingPaymentMethod === "เงินโอน"
+                          ? "bg-blue-600 text-white border-blue-600 shadow-sm shadow-blue-600/20"
+                          : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                      }`}
+                    >
+                      <span>📲</span>
+                      <span>{lang === "th" ? "เงินโอน" : "Transfer"}</span>
+                    </button>
+                    <button
+                      type="button"
+                      id="edit-payment-online"
+                      onClick={() => setEditingPaymentMethod("ออนไลน์")}
+                      className={`py-2.5 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border transition-all cursor-pointer whitespace-nowrap ${
+                        editingPaymentMethod === "ออนไลน์"
+                          ? "bg-purple-600 text-white border-purple-600 shadow-sm shadow-purple-600/20"
+                          : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                      }`}
+                    >
+                      <span>🌐</span>
+                      <span>{lang === "th" ? "ออนไลน์" : "Online"}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Items in Order */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                      {t.orderItems} ({editingItems.length})
+                    </label>
+                  </div>
+
+                  {editingItems.length === 0 ? (
+                    <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-600 text-xs font-medium text-center">
+                      {t.noItemsInOrderError}
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {editingItems.map((item, idx) => (
+                        <div
+                          key={idx}
+                          className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2.5 shadow-2xs"
+                        >
+                          {/* Row 1: Item Name and Delete Button */}
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <span className="font-bold text-slate-900 text-xs sm:text-sm block truncate">
+                                {lang === "en" ? (item.nameEN || item.nameTH) : (item.nameTH || item.nameEN)}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveItemFromEdit(idx)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer shrink-0"
+                              title={lang === "th" ? "ลบรายการนี้" : "Remove item"}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+
+                          {/* Row 2: Unit Price on Left, Stepper & Line Subtotal on Right */}
+                          <div className="flex flex-wrap items-center justify-between gap-2.5 pt-2 border-t border-slate-200/60">
+                            {/* Unit Price input */}
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">
+                                {t.unitPriceLabel}
+                              </span>
+                              <div className="flex items-center bg-white border border-slate-200 rounded-lg px-2 py-1 shadow-2xs">
+                                <span className="text-xs text-slate-400 font-mono mr-1">฿</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={item.price}
+                                  onChange={(e) => handleUpdateItemPrice(idx, parseFloat(e.target.value) || 0)}
+                                  className="w-16 text-xs font-mono font-bold text-slate-900 focus:outline-none"
+                                />
+                              </div>
+                            </div>
+
+                            {/* Stepper & Line Subtotal */}
+                            <div className="flex items-center gap-3 shrink-0 ml-auto">
+                              {/* Stepper */}
+                              <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-0.5 shadow-2xs">
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateItemQuantity(idx, -1)}
+                                  className="w-6 h-6 rounded-md hover:bg-slate-100 text-slate-700 flex items-center justify-center font-bold cursor-pointer active:scale-95"
+                                >
+                                  <Minus className="w-3.5 h-3.5" />
+                                </button>
+                                <span className="w-7 text-center font-mono font-black text-xs text-slate-900">
+                                  {item.quantity}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateItemQuantity(idx, 1)}
+                                  className="w-6 h-6 rounded-md hover:bg-slate-100 text-slate-700 flex items-center justify-center font-bold cursor-pointer active:scale-95"
+                                >
+                                  <Plus className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+
+                              {/* Subtotal */}
+                              <div className="text-right min-w-[60px]">
+                                <span className="font-mono font-black text-slate-900 text-xs sm:text-sm">
+                                  ฿{item.price * item.quantity}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Add new item to order selector - Stacks neatly on mobile */}
+                <div className="p-3 rounded-2xl bg-slate-100/70 border border-slate-200/80">
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                    <select
+                      id="select-item-to-add-to-order"
+                      value={selectedAddItemToEdit}
+                      onChange={(e) => setSelectedAddItemToEdit(e.target.value)}
+                      className="flex-1 px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer"
+                    >
+                      <option value="">{t.selectItemToAdd}</option>
+                      {menuItems.map(m => (
+                        <option key={m.id} value={m.id}>
+                          {lang === "en" ? (m.nameEN || m.nameTH) : (m.nameTH || m.nameEN)} (฿{m.price})
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      id="add-selected-item-to-order-btn"
+                      disabled={!selectedAddItemToEdit}
+                      onClick={() => handleAddItemToEditingOrder(selectedAddItemToEdit)}
+                      className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 text-center ${
+                        selectedAddItemToEdit
+                          ? "bg-slate-900 hover:bg-slate-800 text-white shadow-sm"
+                          : "bg-slate-200 text-slate-400 cursor-not-allowed"
+                      }`}
+                    >
+                      {t.addItemToOrder}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Auto Stock Adjust Checkbox */}
+                <label className="flex items-start gap-2.5 p-3 rounded-2xl bg-amber-50/60 border border-amber-200/60 cursor-pointer text-left">
+                  <input
+                    type="checkbox"
+                    id="adjust-stock-on-edit-checkbox"
+                    checked={adjustStockOnEdit}
+                    onChange={(e) => setAdjustStockOnEdit(e.target.checked)}
+                    className="mt-0.5 rounded text-amber-600 focus:ring-amber-500 cursor-pointer"
+                  />
+                  <div>
+                    <span className="text-xs font-black text-slate-800 block">
+                      {t.adjustStockOnEditCheckbox}
+                    </span>
+                    <span className="text-[11px] text-slate-500 block leading-normal mt-0.5">
+                      {t.adjustStockOnEditDesc}
+                    </span>
+                  </div>
+                </label>
+              </div>
+
+              {/* Footer with Total & Save Action */}
+              <div className="pt-3.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 shrink-0">
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+                    {t.totalAmountLabel}
+                  </span>
+                  <span className="text-xl font-black text-slate-950 font-mono">
+                    ฿{editingItems.reduce((sum, it) => sum + (it.price * it.quantity), 0)}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 ml-auto">
+                  <button
+                    type="button"
+                    id="cancel-edit-order-btn"
+                    onClick={() => setOrderToEdit(null)}
+                    className="py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 font-bold text-xs cursor-pointer transition-all active:scale-95"
+                  >
+                    {t.cancelBtn}
+                  </button>
+                  <button
+                    type="button"
+                    id="save-edit-order-btn"
+                    onClick={handleSaveEditOrder}
+                    className="py-2.5 px-5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-black text-xs cursor-pointer shadow-lg shadow-slate-900/20 transition-all active:scale-95 flex items-center gap-1.5"
+                  >
+                    <Check className="w-4 h-4 stroke-[3]" />
+                    <span>{t.saveChangesBtn}</span>
+                  </button>
+                </div>
               </div>
             </motion.div>
           </div>

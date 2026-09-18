@@ -95,6 +95,26 @@ export const getSlipFromIDB = async (id: string): Promise<string | null> => {
   }
 };
 
+export const deleteSlipFromIDB = async (id: string): Promise<boolean> => {
+  try {
+    const db = await getIDB();
+    if (!db) return false;
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(STORE_SLIPS, "readwrite");
+        const store = tx.objectStore(STORE_SLIPS);
+        store.delete(id);
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => resolve(false);
+      } catch (e) {
+        resolve(false);
+      }
+    });
+  } catch (e) {
+    return false;
+  }
+};
+
 export const backupTransactionsToIDB = async (transactions: any[]): Promise<boolean> => {
   try {
     const db = await getIDB();
@@ -424,3 +444,74 @@ export const detectLostSalesToday = (
     totalEstimatedAmount,
   };
 };
+
+// 6. Duplicate Transactions Detector & Grouping Helper
+export interface DuplicateGroup {
+  fingerprint: string;
+  date: string;
+  total: number;
+  itemsSummary: string;
+  original: any;
+  duplicates: any[];
+}
+
+export const findDuplicateTransactions = (transactions: any[], targetDate?: string): DuplicateGroup[] => {
+  if (!Array.isArray(transactions) || transactions.length === 0) return [];
+
+  const filtered = targetDate
+    ? transactions.filter((tx) => {
+        if (!tx) return false;
+        if (tx.date) return tx.date === targetDate;
+        const txDate = tx.timestamp ? tx.timestamp.split(" @ ")[0] : "";
+        return txDate === targetDate || (typeof tx.timestamp === "string" && tx.timestamp.includes(targetDate));
+      })
+    : transactions;
+
+  const groups: Record<string, any[]> = {};
+
+  filtered.forEach((tx) => {
+    if (!tx || !Array.isArray(tx.items) || tx.items.length === 0) return;
+    const dateKey = tx.date || (tx.timestamp ? tx.timestamp.split(" @ ")[0] : "");
+    const itemsKey = [...tx.items]
+      .map((it) => `${it.nameEN || it.nameTH || ""}:${it.quantity || 0}:${it.price || 0}`)
+      .sort()
+      .join("|");
+    const fp = `${dateKey}__${tx.total}__${itemsKey}`;
+    if (!groups[fp]) {
+      groups[fp] = [];
+    }
+    groups[fp].push(tx);
+  });
+
+  const duplicateGroups: DuplicateGroup[] = [];
+
+  Object.entries(groups).forEach(([fingerprint, txList]) => {
+    if (txList.length > 1) {
+      // Sort so normal transactions take priority as "original", and "recovered" or newer ones as "duplicate"
+      const sorted = [...txList].sort((a, b) => {
+        const aRecovered = a.id?.startsWith("txn_recovered_") ? 1 : 0;
+        const bRecovered = b.id?.startsWith("txn_recovered_") ? 1 : 0;
+        if (aRecovered !== bRecovered) return aRecovered - bRecovered;
+        return (a.rawTimestamp || 0) - (b.rawTimestamp || 0);
+      });
+
+      const original = sorted[0];
+      const duplicates = sorted.slice(1);
+      const itemsSummary = (original.items || [])
+        .map((it: any) => `${it.nameTH || it.nameEN} x${it.quantity}`)
+        .join(", ");
+
+      duplicateGroups.push({
+        fingerprint,
+        date: original.date || (original.timestamp ? original.timestamp.split(" @ ")[0] : ""),
+        total: original.total || 0,
+        itemsSummary,
+        original,
+        duplicates,
+      });
+    }
+  });
+
+  return duplicateGroups;
+};
+
