@@ -62,6 +62,15 @@ import { QuickRestockModal } from "./components/QuickRestockModal";
 import { DailyStockTable, DailyStockRow } from "./components/DailyStockTable";
 import { DailyTimeline, TimelineEvent } from "./components/DailyTimeline";
 import { generateDailyPdfReport } from "./utils/pdfReport";
+import {
+  salvageTransactions,
+  safeSaveTransactions,
+  processSlipImageSafe,
+  detectLostSalesToday,
+  saveSlipToIDB,
+  getSlipFromIDB,
+  getBackupTransactionsFromIDB,
+} from "./utils/storage";
 
 // Types
 interface MenuItem {
@@ -361,6 +370,13 @@ const TRANSLATIONS = {
     bestSellerCakeChart: "Daily Best Sellers",
     shoppingListTitle: "Restock & Procurement List",
     minThreshold: "Min Threshold",
+    chooseFromGallery: "Choose from Gallery",
+    takeSlipPhoto: "Take Photo",
+    recoveredSalesBannerTitle: "Recoverable Today's Sales Detected",
+    recoveredSalesBannerDesc: "Detected {units} items deducted from inventory today (฿{amount}) that are missing from sales history. Tap to restore immediately.",
+    restoreSalesBtn: "Restore Today's Sales",
+    salesRestoredSuccess: "Today's sales history successfully restored!",
+    checkAndRecoverSales: "Check & Recover Missing Sales",
   },
   th: {
     appTitle: "SlipPro",
@@ -533,6 +549,13 @@ const TRANSLATIONS = {
     bestSellerCakeChart: "กราฟสินค้าขายดีประจำวัน",
     shoppingListTitle: "รายการซื้อของและของใกล้หมด",
     minThreshold: "เกณฑ์ขั้นต่ำ",
+    chooseFromGallery: "เลือกจากอัลบั้ม",
+    takeSlipPhoto: "ถ่ายภาพสลิป",
+    recoveredSalesBannerTitle: "ตรวจพบยอดขายวันนี้ที่สามารถกู้คืนได้",
+    recoveredSalesBannerDesc: "ระบบตรวจพบการตัดสต็อกสินค้าในวันนี้ {units} ชิ้น (รวม ฿{amount}) ที่ยังไม่ปรากฏในประวัติการขาย แตะเพื่อกู้คืนทันที",
+    restoreSalesBtn: "กู้คืนประวัติการขายวันนี้",
+    salesRestoredSuccess: "กู้คืนประวัติการขายวันนี้เรียบร้อยแล้ว!",
+    checkAndRecoverSales: "ตรวจสอบและกู้คืนยอดขายที่ตกหล่น",
   }
 };
 
@@ -605,6 +628,7 @@ export default function App() {
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
   const qrFileInputRef = useRef<HTMLInputElement>(null);
   const html5QrCodeRef = useRef<any>(null);
 
@@ -633,18 +657,28 @@ export default function App() {
     ensureOpeningStock(getLocalDateString(), initialItems);
     setRestockEvents(getAllRestockEvents());
 
+    // Robust Transaction Loading & Auto-Salvage from possible quota truncation
     const savedHistory = localStorage.getItem("slippro_transactions_v1");
+    let loadedTransactions: Transaction[] = [];
     if (savedHistory) {
-      try {
-        const parsed = JSON.parse(savedHistory);
-        if (Array.isArray(parsed)) {
-          setTransactions(parsed);
-        } else {
-          setTransactions([]);
-        }
-      } catch (e) {
-        setTransactions([]);
+      loadedTransactions = salvageTransactions(savedHistory);
+    }
+    if (loadedTransactions.length === 0) {
+      const backupHistory = localStorage.getItem("slippro_transactions_backup_v1");
+      if (backupHistory) {
+        loadedTransactions = salvageTransactions(backupHistory);
       }
+    }
+    if (loadedTransactions.length > 0) {
+      setTransactions(loadedTransactions);
+    } else {
+      // Check IndexedDB persistent store
+      getBackupTransactionsFromIDB().then(idbTx => {
+        if (idbTx && idbTx.length > 0) {
+          setTransactions(idbTx);
+          safeSaveTransactions(idbTx);
+        }
+      }).catch(() => {});
     }
 
     const savedShopProfile = localStorage.getItem("slippro_shop_profile_v1");
@@ -991,7 +1025,7 @@ export default function App() {
         }
         return t;
       });
-      localStorage.setItem("slippro_transactions_v1", JSON.stringify(updated));
+      safeSaveTransactions(updated);
       return updated;
     });
   };
@@ -1018,84 +1052,98 @@ export default function App() {
     return c.quantity > currentInDb.currentStock;
   };
 
-  // Handle capture of file/camera
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+  // Memory-safe slip file/camera handling for mobile/Android
+  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const img = new Image();
-      const objectUrl = URL.createObjectURL(file);
-      
-      img.onload = () => {
-        URL.revokeObjectURL(objectUrl);
-        const canvas = document.createElement("canvas");
-        const MAX_WIDTH = 1200;
-        const MAX_HEIGHT = 1200;
-        let width = img.width;
-        let height = img.height;
-
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
-            width = MAX_WIDTH;
-          }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height;
-            height = MAX_HEIGHT;
-          }
-        }
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height);
-          
-          const timestampStr = `${getLocalDateString()} ${getLocalTimeString()}`;
-          
-          ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
-          ctx.fillRect(0, height - 40, width, 40);
-          ctx.font = "20px sans-serif";
-          ctx.fillStyle = "white";
-          ctx.textAlign = "right";
-          ctx.textBaseline = "middle";
-          ctx.fillText(timestampStr, width - 20, height - 20);
-        }
-        const compressedBase64 = canvas.toDataURL("image/jpeg", 0.7);
-        
-        setCapturedSlip(compressedBase64);
+      try {
+        const timestampStr = `${getLocalDateString()} ${getLocalTimeString()}`;
+        const { previewUrl, microThumb } = await processSlipImageSafe(file, timestampStr);
+        setCapturedSlip(previewUrl);
         setPaymentMethod("เงินโอน");
         setPaymentMethodError(false);
         try {
-          localStorage.setItem("slippro_current_slip_v1", compressedBase64);
+          localStorage.setItem("slippro_current_slip_v1", microThumb);
         } catch (err) {
-          console.error("Storage full");
+          console.warn("Storage quota limit reached for temporary slip, kept in state.");
         }
         triggerToast(t.slipCaptured);
-        
-        // Auto-download to save to device
-        const link = document.createElement("a");
-        link.href = compressedBase64;
-        link.download = `slip_${Date.now()}.jpg`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      };
-      
-      img.onerror = () => {
-        URL.revokeObjectURL(objectUrl);
-        triggerToast("Failed to load image");
-      };
-      
-      img.src = objectUrl;
+      } catch (err) {
+        console.error("Failed to process slip image:", err);
+        triggerToast(lang === "th" ? "ไม่สามารถประมวลผลรูปภาพสลิปได้" : "Failed to process slip image");
+      }
     }
   };
 
   const handleRemoveSlip = () => {
     setCapturedSlip(null);
-    localStorage.removeItem("slippro_current_slip_v1");
+    try {
+      localStorage.removeItem("slippro_current_slip_v1");
+    } catch (e) {}
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
+    if (galleryInputRef.current) {
+      galleryInputRef.current.value = "";
+    }
+  };
+
+  const handleViewSlipFull = async (txId?: string, thumbnail?: string | null) => {
+    if (!thumbnail) return;
+    if (thumbnail.startsWith("idb:") || (txId && !thumbnail.startsWith("data:"))) {
+      const id = txId || thumbnail.replace("idb:", "");
+      const fullFromIdb = await getSlipFromIDB(id);
+      if (fullFromIdb) {
+        setFullScreenImage(fullFromIdb);
+        return;
+      }
+    }
+    setFullScreenImage(thumbnail);
+  };
+
+  // Automatic discrepancy calculation between stock deductions and recorded sales
+  const todayDateStr = getLocalDateString();
+  const todaysOpeningMap = getOpeningStockForDate(todayDateStr) || {};
+  const lostSales = detectLostSalesToday(
+    todayDateStr,
+    todaysOpeningMap,
+    menuItems,
+    restockEvents,
+    transactions
+  );
+
+  const handleRestoreLostSalesToday = () => {
+    if (!lostSales.hasDiscrepancy || lostSales.missingItems.length === 0) return;
+    const now = new Date();
+    const curDate = getLocalDateString(now);
+    const curTime = getLocalTimeString(now);
+
+    const recoveredTx: Transaction = {
+      id: "txn_recovered_" + Date.now(),
+      timestamp: `${curDate} @ ${curTime} (${lang === "th" ? "กู้คืนยอดขาย" : "Recovered"})`,
+      date: curDate,
+      time: curTime,
+      rawTimestamp: Date.now(),
+      items: lostSales.missingItems.map(m => ({
+        nameEN: m.nameEN,
+        nameTH: m.nameTH,
+        price: m.price,
+        quantity: m.quantity
+      })),
+      total: lostSales.totalEstimatedAmount,
+      slipThumbnail: null,
+      lowStockAlerts: [],
+      paymentMethod: "เงินสด"
+    };
+
+    const updated = [recoveredTx, ...transactions];
+    setTransactions(updated);
+    safeSaveTransactions(updated);
+    triggerToast(
+      lang === "th"
+        ? `กู้คืนยอดขายสำเร็จ ${lostSales.totalMissingUnits} ชิ้น (฿${lostSales.totalEstimatedAmount})`
+        : `Successfully recovered ${lostSales.totalMissingUnits} items (฿${lostSales.totalEstimatedAmount})`
+    );
   };
 
   // Calculate cart total
@@ -1174,21 +1222,34 @@ export default function App() {
 
     const updatedTransactions = [newTransaction, ...transactions];
     setTransactions(updatedTransactions);
-    localStorage.setItem("slippro_transactions_v1", JSON.stringify(updatedTransactions));
 
-    // 4. Clear cart and slip
-    setCart([]);
-    setCapturedSlip(null);
-    setPaymentMethod(null);
-    setPaymentMethodError(false);
-    localStorage.removeItem("slippro_current_slip_v1");
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
+    try {
+      safeSaveTransactions(updatedTransactions);
+      if (capturedSlip) {
+        saveSlipToIDB(newTransaction.id, capturedSlip).catch(() => {});
+      }
+    } catch (saveErr) {
+      console.warn("Storage warning in confirmAndSend:", saveErr);
+    } finally {
+      // 4. Guaranteed to clear cart and slip so cart items NEVER get stuck!
+      setCart([]);
+      setCapturedSlip(null);
+      setPaymentMethod(null);
+      setPaymentMethodError(false);
+      try {
+        localStorage.removeItem("slippro_current_slip_v1");
+      } catch (e) {}
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+      if (galleryInputRef.current) {
+        galleryInputRef.current.value = "";
+      }
+
+      // Switch back to register view immediately for fast checkout flow
+      setActiveTab("register");
+      triggerToast(t.saleSuccessToast);
     }
-
-    // Switch back to register view immediately for fast checkout flow
-    setActiveTab("register");
-    triggerToast(t.saleSuccessToast);
   };
 
   const handleResendToLine = (tx: Transaction) => {
@@ -1400,7 +1461,7 @@ export default function App() {
       return txDate !== selectedReportDate && !(typeof tx.timestamp === "string" && tx.timestamp.includes(selectedReportDate));
     });
     setTransactions(updatedTransactions);
-    localStorage.setItem("slippro_transactions_v1", JSON.stringify(updatedTransactions));
+    safeSaveTransactions(updatedTransactions);
 
     const updatedRestockEvents = restockEvents.filter(r => r.date !== selectedReportDate);
     setRestockEvents(updatedRestockEvents);
@@ -2125,29 +2186,51 @@ export default function App() {
                     <span>{t.cameraSection}</span>
                   </h2>
 
-                  {/* Hidden Input capturing environments natively */}
+                  {/* Hidden Inputs capturing environments or photo library */}
                   <input
                     id="slip-camera-input"
                     type="file"
+                    accept="image/*"
                     capture="environment"
                     ref={fileInputRef}
                     onChange={handleFileChange}
                     className="hidden"
                   />
+                  <input
+                    id="slip-gallery-input"
+                    type="file"
+                    accept="image/*"
+                    ref={galleryInputRef}
+                    onChange={handleFileChange}
+                    className="hidden"
+                  />
 
                   {!capturedSlip ? (
-                    <button
-                      id="snap-slip-btn"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="w-full py-8 border-2 border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center hover:bg-slate-50 bg-slate-50/50 transition-all cursor-pointer group"
-                    >
-                      <div id="upload-placeholder" className="flex flex-col items-center">
-                        <span className="text-3xl group-hover:scale-110 transition-transform">📸</span>
-                        <span id="upload-label" className="text-[10px] font-bold mt-3 text-slate-500 uppercase tracking-wider">
-                          {t.snapButton.toUpperCase()}
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <button
+                        type="button"
+                        id="snap-slip-btn"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="py-6 px-3 border-2 border-dashed border-slate-300 rounded-2xl flex flex-col items-center justify-center hover:bg-slate-50 bg-slate-50/50 transition-all cursor-pointer group active:scale-95"
+                      >
+                        <Camera className="w-6 h-6 text-slate-700 group-hover:scale-110 transition-transform mb-1.5" />
+                        <span id="upload-camera-label" className="text-[11px] font-bold text-slate-800 text-center leading-tight">
+                          {t.takeSlipPhoto}
                         </span>
-                      </div>
-                    </button>
+                      </button>
+
+                      <button
+                        type="button"
+                        id="gallery-slip-btn"
+                        onClick={() => galleryInputRef.current?.click()}
+                        className="py-6 px-3 border-2 border-dashed border-slate-300 rounded-2xl flex flex-col items-center justify-center hover:bg-slate-50 bg-slate-50/50 transition-all cursor-pointer group active:scale-95"
+                      >
+                        <ImageIcon className="w-6 h-6 text-slate-700 group-hover:scale-110 transition-transform mb-1.5" />
+                        <span id="upload-gallery-label" className="text-[11px] font-bold text-slate-800 text-center leading-tight">
+                          {t.chooseFromGallery}
+                        </span>
+                      </button>
+                    </div>
                   ) : (
                     <div className="space-y-3">
                       {/* Thumbnail Preview Area */}
@@ -2181,18 +2264,30 @@ export default function App() {
 
                       <div className="flex gap-2">
                         <button
+                          type="button"
                           id="retake-slip-btn"
                           onClick={() => fileInputRef.current?.click()}
-                          className="flex-1 py-3 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-all text-xs font-semibold text-slate-700 flex items-center justify-center gap-1.5 cursor-pointer"
+                          className="flex-1 py-2.5 px-2 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-all text-xs font-semibold text-slate-700 flex items-center justify-center gap-1 cursor-pointer active:scale-95"
                         >
-                          <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
-                          <span>{t.retakeButton}</span>
+                          <Camera className="w-3.5 h-3.5 text-slate-500" />
+                          <span>{t.takeSlipPhoto}</span>
                         </button>
 
                         <button
+                          type="button"
+                          id="retake-gallery-btn"
+                          onClick={() => galleryInputRef.current?.click()}
+                          className="flex-1 py-2.5 px-2 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 transition-all text-xs font-semibold text-slate-700 flex items-center justify-center gap-1 cursor-pointer active:scale-95"
+                        >
+                          <ImageIcon className="w-3.5 h-3.5 text-slate-500" />
+                          <span>{t.chooseFromGallery}</span>
+                        </button>
+
+                        <button
+                          type="button"
                           id="remove-slip-btn"
                           onClick={handleRemoveSlip}
-                          className="p-3 rounded-xl bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 transition-all flex items-center justify-center cursor-pointer"
+                          className="p-2.5 rounded-xl bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 transition-all flex items-center justify-center cursor-pointer active:scale-95"
                           title={t.removeSlip}
                         >
                           <Trash2 className="w-4 h-4" />
@@ -2402,6 +2497,38 @@ export default function App() {
                   </button>
                 </div>
 
+                {/* Recover Lost Today's Sales Banner in History Tab */}
+                {selectedHistoryDate === getLocalDateString() && lostSales.hasDiscrepancy && (
+                  <div id="history-lost-sales-recovery-banner" className="m-4 p-4 bg-amber-50 border border-amber-200 rounded-2xl shadow-sm space-y-2.5">
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                        <AlertTriangle className="w-4 h-4 stroke-[2.5]" />
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="text-xs font-bold text-amber-900">
+                          {t.recoveredSalesBannerTitle}
+                        </h4>
+                        <p className="text-[11px] text-amber-700 mt-0.5 leading-relaxed">
+                          {t.recoveredSalesBannerDesc
+                            .replace("{units}", String(lostSales.totalMissingUnits))
+                            .replace("{amount}", String(lostSales.totalEstimatedAmount))}
+                        </p>
+                        <div className="mt-2.5 flex items-center gap-2">
+                          <button
+                            type="button"
+                            id="history-restore-lost-sales-btn"
+                            onClick={handleRestoreLostSalesToday}
+                            className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center gap-1.5"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>{t.restoreSalesBtn}</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="bg-white divide-y divide-slate-100 flex-1" id="transaction-history-list">
                   {historyDayTx.length === 0 ? (
                     <div className="p-10 text-center flex flex-col items-center justify-center space-y-3 opacity-60">
@@ -2501,7 +2628,7 @@ export default function App() {
                                 </summary>
                                 <div 
                                   className="mt-3 rounded-xl overflow-hidden bg-white max-w-[240px] shadow-sm border border-slate-200 cursor-zoom-in group/history-img relative"
-                                  onClick={() => setFullScreenImage(tx.slipThumbnail)}
+                                  onClick={() => handleViewSlipFull(tx.id, tx.slipThumbnail)}
                                 >
                                   <img
                                     src={tx.slipThumbnail}
@@ -2605,6 +2732,38 @@ export default function App() {
                   <ChevronRight className="w-4 h-4 stroke-[2.5]" />
                 </button>
               </div>
+
+              {/* Recover Lost Today's Sales Banner in Z-Report */}
+              {selectedReportDate === getLocalDateString() && lostSales.hasDiscrepancy && (
+                <div id="zreport-lost-sales-recovery-banner" className="p-4 bg-amber-50 border border-amber-200 rounded-2xl shadow-sm space-y-2.5">
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                      <AlertTriangle className="w-4 h-4 stroke-[2.5]" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="text-xs font-bold text-amber-900">
+                        {t.recoveredSalesBannerTitle}
+                      </h4>
+                      <p className="text-[11px] text-amber-700 mt-0.5 leading-relaxed">
+                        {t.recoveredSalesBannerDesc
+                          .replace("{units}", String(lostSales.totalMissingUnits))
+                          .replace("{amount}", String(lostSales.totalEstimatedAmount))}
+                      </p>
+                      <div className="mt-2.5 flex items-center gap-2">
+                        <button
+                          type="button"
+                          id="zreport-restore-lost-sales-btn"
+                          onClick={handleRestoreLostSalesToday}
+                          className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center gap-1.5"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>{t.restoreSalesBtn}</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Z-Report Cover Header */}
               <div className="bg-slate-900 text-white rounded-3xl p-5 shadow-lg relative overflow-hidden">
@@ -3720,6 +3879,45 @@ export default function App() {
                           </span>
                         </div>
                       </div>
+                    </div>
+
+                    {/* Sales & Storage Data Health Diagnostic */}
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                          {lang === "th" ? "การวินิจฉัยสต็อกและยอดขาย" : "Sales & Stock Health"}
+                        </h4>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${lostSales.hasDiscrepancy ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>
+                          {lostSales.hasDiscrepancy
+                            ? (lang === "th" ? "พบยอดขายตกหล่น" : "Discrepancy Found")
+                            : (lang === "th" ? "ข้อมูลสมบูรณ์" : "Synced")}
+                        </span>
+                      </div>
+
+                      {lostSales.hasDiscrepancy ? (
+                        <div className="space-y-2">
+                          <p className="text-[11px] text-amber-700 leading-relaxed">
+                            {lang === "th"
+                              ? `ตรวจพบสินค้าตัดสต็อกไปแล้ว ${lostSales.totalMissingUnits} ชิ้น (฿${lostSales.totalEstimatedAmount}) แต่ไม่มีในประวัติการขาย สามารถกดกู้คืนได้ทันที`
+                              : `Detected ${lostSales.totalMissingUnits} items (฿${lostSales.totalEstimatedAmount}) missing from history. Tap restore below.`}
+                          </p>
+                          <button
+                            type="button"
+                            id="settings-recover-sales-btn"
+                            onClick={handleRestoreLostSalesToday}
+                            className="w-full py-2 px-3 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 cursor-pointer transition-all shadow-sm"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>{t.restoreSalesBtn}</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-slate-500 leading-relaxed">
+                          {lang === "th"
+                            ? "ประวัติการขายและสต็อกสินค้าในวันนี้บันทึกอย่างถูกต้องและปลอดภัย ไม่พบยอดขายตกหล่น"
+                            : "All daily sales and inventory movements are fully accounted for."}
+                        </p>
+                      )}
                     </div>
 
                     {/* Force Purge Cache */}
