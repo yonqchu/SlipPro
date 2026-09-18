@@ -1,4 +1,4 @@
 {
-  "version": "2.2.9",
-  "releaseNotes": "Clean Edit Order modal layout with slip image attachment/replacement/removal, zero overlapping controls, and responsive styling."
+  "version": "2.3.0",
+  "releaseNotes": "Removed Send to LINE button from History transactions list for cleaner action controls."
 }

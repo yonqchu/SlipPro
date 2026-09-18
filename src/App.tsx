@@ -2933,7 +2933,7 @@ export default function App() {
                               </div>
                             )}
 
-                            {/* Well Positioned Buttons: Edit, Delete & Resend to LINE */}
+                            {/* Well Positioned Buttons: Edit & Delete Order */}
                             <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-slate-200/60">
                               <button
                                 type="button"
@@ -2958,16 +2958,6 @@ export default function App() {
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                                 <span>{t.deleteOrderBtn}</span>
-                              </button>
-
-                              <button
-                                type="button"
-                                id={`resend-line-${tx.id}`}
-                                onClick={() => handleResendToLine(tx)}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white font-bold text-[11px] cursor-pointer shadow-sm shadow-[#06C755]/20 transition-all active:scale-95 whitespace-nowrap"
-                              >
-                                <ExternalLink className="w-3.5 h-3.5 stroke-[2.5]" />
-                                <span>{t.resendToLine}</span>
                               </button>
                             </div>
                           </div>
