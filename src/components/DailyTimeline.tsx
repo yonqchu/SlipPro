@@ -95,41 +95,41 @@ export const DailyTimeline: React.FC<DailyTimelineProps> = ({
                   </div>
                   {/* Content Box */}
                   <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3 space-y-1.5 hover:border-slate-300 transition-colors">
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] font-mono font-bold text-slate-400">
-                          {ev.time}
-                        </span>
-                        <span
-                          className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${
-                            isCash
-                              ? "bg-emerald-100 text-emerald-800"
-                              : isTransfer
-                              ? "bg-blue-100 text-blue-800"
-                              : "bg-purple-100 text-purple-800"
-                          }`}
-                        >
-                          {isTh
-                            ? isCash
-                              ? "💵 เงินสด"
-                              : isTransfer
-                              ? "📲 เงินโอน"
-                              : "🌐 ออนไลน์"
-                            : isCash
-                            ? "Cash"
-                            : isTransfer
-                            ? "Transfer"
-                            : "Online"}
-                        </span>
-                        {ev.hasSlip && (
-                          <span className="text-[9px] font-bold text-slate-500 bg-slate-200/80 px-1.5 py-0.2 rounded">
-                            {isTh ? "มีสลิป" : "Slip"}
-                          </span>
-                        )}
-                      </div>
+                    <div className="flex justify-between items-center gap-2">
+                      <span className="text-[10px] font-mono font-bold text-slate-400">
+                        {ev.time}
+                      </span>
                       <span className="text-xs font-black font-mono text-emerald-600">
                         {isOnline ? (isTh ? "ไม่ระบุ" : "N/A") : `${currencySymbol}${ev.total}`}
                       </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span
+                        className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${
+                          isCash
+                            ? "bg-emerald-100 text-emerald-800"
+                            : isTransfer
+                            ? "bg-blue-100 text-blue-800"
+                            : "bg-purple-100 text-purple-800"
+                        }`}
+                      >
+                        {isTh
+                          ? isCash
+                            ? "💵 เงินสด"
+                            : isTransfer
+                            ? "📲 โอน"
+                            : "🌐 ออนไลน์"
+                          : isCash
+                          ? "Cash"
+                          : isTransfer
+                          ? "Transfer"
+                          : "Online"}
+                      </span>
+                      {ev.hasSlip && (
+                        <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100/80 px-1.5 py-0.5 rounded-full">
+                          {isTh ? "มีสลิป" : "Slip"}
+                        </span>
+                      )}
                     </div>
                     {/* Item breakdown */}
                     <div className="text-[11px] text-slate-600 space-y-0.5 pt-0.5 border-t border-slate-200/50 font-medium">

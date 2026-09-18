@@ -60,6 +60,7 @@ import {
   CakeChartSlice,
   getTimezone,
   setTimezone,
+  parseDateTimeInput,
 } from "./dailyStock";
 import { QuickRestockModal } from "./components/QuickRestockModal";
 import { DailyStockTable, DailyStockRow } from "./components/DailyStockTable";
@@ -672,6 +673,8 @@ export default function App() {
   }[]>([]);
   const [editingPaymentMethod, setEditingPaymentMethod] = useState<"เงินสด" | "เงินโอน" | "ออนไลน์">("เงินสด");
   const [editingTimestamp, setEditingTimestamp] = useState("");
+  const [editingDate, setEditingDate] = useState("");
+  const [editingTime, setEditingTime] = useState("");
   const [adjustStockOnEdit, setAdjustStockOnEdit] = useState(true);
   const [selectedAddItemToEdit, setSelectedAddItemToEdit] = useState("");
   const [editingSlipThumbnail, setEditingSlipThumbnail] = useState<string | null>(null);
@@ -1273,7 +1276,16 @@ export default function App() {
     setOrderToEdit(tx);
     setEditingItems(tx.items.map(it => ({ ...it })));
     setEditingPaymentMethod(tx.paymentMethod || (tx.slipThumbnail ? "เงินโอน" : "เงินสด"));
-    setEditingTimestamp(tx.timestamp || "");
+    
+    const parsed = parseDateTimeInput(
+      tx.timestamp || (tx.date && tx.time ? `${tx.date} @ ${tx.time}` : ""),
+      tx.date || getLocalDateString(),
+      tx.time || getLocalTimeString()
+    );
+    setEditingTimestamp(tx.timestamp || parsed.timestamp);
+    setEditingDate(parsed.date);
+    setEditingTime(parsed.time);
+
     setAdjustStockOnEdit(true);
     setSelectedAddItemToEdit("");
     setEditingSlipThumbnail(tx.slipThumbnail || null);
@@ -1335,7 +1347,7 @@ export default function App() {
         const timestampStr = editingTimestamp || `${getLocalDateString()} ${getLocalTimeString()}`;
         const { previewUrl, microThumb } = await processSlipImageSafe(file, timestampStr);
         setEditingSlipThumbnail(microThumb || previewUrl);
-        setEditingPaymentMethod("เงินโอน");
+        // Retain original/current payment method - do not force to transfer
         triggerToast(lang === "th" ? "แนบรูปสลิปเรียบร้อย" : "Slip image attached");
       } catch (err) {
         console.error("Failed to process slip image:", err);
@@ -1350,6 +1362,16 @@ export default function App() {
       editSlipFileInputRef.current.value = "";
     }
     triggerToast(lang === "th" ? "ลบรูปสลิปแล้ว" : "Slip image removed");
+  };
+
+  const handle24HourTimeChange = (newH: string, newM: string, newS: string) => {
+    const validH = Math.min(23, Math.max(0, parseInt(newH, 10) || 0)).toString().padStart(2, "0");
+    const validM = Math.min(59, Math.max(0, parseInt(newM, 10) || 0)).toString().padStart(2, "0");
+    const validS = Math.min(59, Math.max(0, parseInt(newS, 10) || 0)).toString().padStart(2, "0");
+    const formatted = `${validH}:${validM}:${validS}`;
+    setEditingTime(formatted);
+    const targetDate = editingDate || getLocalDateString();
+    setEditingTimestamp(`${targetDate} @ ${formatted}`);
   };
 
   const handleSaveEditOrder = () => {
@@ -1397,7 +1419,14 @@ export default function App() {
       localStorage.setItem("slippro_stock_v2", JSON.stringify(updatedMenuItems));
     }
 
-    // Update transactions state
+    // Parse the updated date and time properly
+    const parsedDateTime = parseDateTimeInput(
+      editingTimestamp,
+      editingDate || orderToEdit.date || getLocalDateString(),
+      editingTime || orderToEdit.time || getLocalTimeString()
+    );
+
+    // Update transactions state with synchronized timestamp, date, time, rawTimestamp, items, total, and paymentMethod
     const updatedTransactions = transactions.map(t => {
       if (t.id === orderToEdit.id) {
         return {
@@ -1405,7 +1434,10 @@ export default function App() {
           items: editingItems,
           total: calculatedTotal,
           paymentMethod: editingPaymentMethod,
-          timestamp: editingTimestamp || t.timestamp,
+          timestamp: parsedDateTime.timestamp,
+          date: parsedDateTime.date,
+          time: parsedDateTime.time,
+          rawTimestamp: parsedDateTime.rawTimestamp,
           slipThumbnail: editingSlipThumbnail || undefined
         };
       }
@@ -1883,13 +1915,35 @@ export default function App() {
 
   // Daily Timeline Events
   const timelineSales: TimelineEvent[] = dayTx.map(tx => {
-    const timeStr = tx.time || (typeof tx.timestamp === "string" && tx.timestamp.includes(" @ ") ? tx.timestamp.split(" @ ")[1] : (tx.timestamp || ""));
+    let timeStr = "";
+    if (typeof tx.timestamp === "string" && tx.timestamp.includes(" @ ")) {
+      const parts = tx.timestamp.split(" @ ");
+      if (parts[1]) {
+        timeStr = parts[1].replace(/\s*(\([^)]+\))\s*$/, "").trim();
+      }
+    }
+    if (!timeStr) {
+      timeStr = tx.time || (typeof tx.timestamp === "string" ? tx.timestamp : "");
+    }
+
+    let rawTs = tx.rawTimestamp;
+    if (!rawTs && tx.date && timeStr) {
+      try {
+        const [y, m, d] = tx.date.split("-").map(Number);
+        const [hr, min, sec] = timeStr.split(":").map(Number);
+        rawTs = new Date(y, m - 1, d, hr || 0, min || 0, sec || 0).getTime();
+      } catch (e) {}
+    }
+    if (!rawTs && tx.id?.startsWith("txn_")) {
+      rawTs = parseInt(tx.id.replace("txn_", "")) || 0;
+    }
+
     return {
       type: "sale",
       id: tx.id,
       time: timeStr,
-      rawTimestamp: tx.rawTimestamp || (tx.id?.startsWith("txn_") ? parseInt(tx.id.replace("txn_", "")) : 0),
-      paymentMethod: tx.paymentMethod || "เงินสด",
+      rawTimestamp: rawTs || 0,
+      paymentMethod: tx.paymentMethod || (tx.slipThumbnail ? "เงินโอน" : "เงินสด"),
       total: tx.total || 0,
       items: Array.isArray(tx.items) ? tx.items : [],
       hasSlip: !!tx.slipThumbnail,
@@ -2701,7 +2755,7 @@ export default function App() {
               if (tx.date) return tx.date === selectedHistoryDate;
               const txDate = tx.timestamp ? tx.timestamp.split(" @ ")[0] : "";
               return txDate === selectedHistoryDate || (typeof tx.timestamp === "string" && tx.timestamp.includes(selectedHistoryDate));
-            });
+            }).sort((a, b) => (b.rawTimestamp || 0) - (a.rawTimestamp || 0));
 
             const pageSize = 10;
             const totalSalesCount = historyDayTx.length;
@@ -2840,58 +2894,59 @@ export default function App() {
                           </div>
 
                           {/* Activity Card */}
-                          <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 space-y-2.5 hover:border-slate-300 transition-colors">
-                            {/* Card Header Row */}
-                            <div className="flex items-center justify-between gap-2 flex-wrap">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="text-xs font-mono font-bold text-slate-500 flex items-center gap-1">
-                                  <Clock className="w-3.5 h-3.5 text-slate-400" />
-                                  {tx.timestamp}
-                                </span>
+                          <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 sm:p-4 space-y-2 hover:border-slate-300 transition-colors">
+                            {/* Card Header Row: Time/Date on the left, Total on the right */}
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[11px] sm:text-xs font-mono font-bold text-slate-500 flex items-center gap-1.5">
+                                <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                <span>{tx.timestamp}</span>
+                              </span>
 
-                                <span
-                                  className={`text-[9px] font-black px-2 py-0.5 rounded-full ${
-                                    isCash
-                                      ? "bg-emerald-100 text-emerald-800"
-                                      : isTransfer
-                                      ? "bg-blue-100 text-blue-800"
-                                      : "bg-purple-100 text-purple-800"
-                                  }`}
-                                >
-                                  {lang === "th"
-                                    ? isCash
-                                      ? "💵 เงินสด"
-                                      : isTransfer
-                                      ? "📲 เงินโอน"
-                                      : "🌐 ออนไลน์"
-                                    : isCash
-                                    ? "Cash"
-                                    : isTransfer
-                                    ? "Transfer"
-                                    : "Online"}
-                                </span>
-
-                                {tx.slipThumbnail && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleViewSlipFull(tx.id, tx.slipThumbnail)}
-                                    className="text-[9px] font-bold text-emerald-700 bg-emerald-100/70 hover:bg-emerald-100 px-2 py-0.5 rounded-full transition-colors cursor-pointer flex items-center gap-1"
-                                  >
-                                    <ImageIcon className="w-3 h-3" />
-                                    <span>{lang === "th" ? "มีสลิป" : "Slip"}</span>
-                                  </button>
-                                )}
-
-                                {tx.lowStockAlerts && tx.lowStockAlerts.length > 0 && (
-                                  <span className="text-[9px] font-black text-rose-600 bg-rose-100/80 px-2 py-0.5 rounded-full">
-                                    {t.lowStockAlertText}
-                                  </span>
-                                )}
-                              </div>
-
-                              <span className="text-xs sm:text-sm font-black font-mono text-emerald-600">
+                              <span className="text-xs sm:text-sm font-black font-mono text-emerald-600 shrink-0">
                                 {isOnline ? (lang === "th" ? "ไม่ระบุ" : "N/A") : `${t.thb}${tx.total.toLocaleString()}`}
                               </span>
+                            </div>
+
+                            {/* New Line: Payment method & Slip badges together */}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span
+                                className={`text-[9px] font-black px-2 py-0.5 rounded-full inline-flex items-center ${
+                                  isCash
+                                    ? "bg-emerald-100 text-emerald-800"
+                                    : isTransfer
+                                    ? "bg-blue-100 text-blue-800"
+                                    : "bg-purple-100 text-purple-800"
+                                }`}
+                              >
+                                {lang === "th"
+                                  ? isCash
+                                    ? "💵 เงินสด"
+                                    : isTransfer
+                                    ? "📲 โอน"
+                                    : "🌐 ออนไลน์"
+                                  : isCash
+                                  ? "Cash"
+                                  : isTransfer
+                                  ? "Transfer"
+                                  : "Online"}
+                              </span>
+
+                              {tx.slipThumbnail && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleViewSlipFull(tx.id, tx.slipThumbnail)}
+                                  className="text-[9px] font-bold text-emerald-700 bg-emerald-100/80 hover:bg-emerald-100 px-2 py-0.5 rounded-full transition-colors cursor-pointer inline-flex items-center gap-1"
+                                >
+                                  <ImageIcon className="w-3 h-3 shrink-0" />
+                                  <span>{lang === "th" ? "มีสลิป" : "Slip"}</span>
+                                </button>
+                              )}
+
+                              {tx.lowStockAlerts && tx.lowStockAlerts.length > 0 && (
+                                <span className="text-[9px] font-black text-rose-600 bg-rose-100/80 px-2 py-0.5 rounded-full">
+                                  {t.lowStockAlertText}
+                                </span>
+                              )}
                             </div>
 
                             {/* Items Breakdown */}
@@ -3771,18 +3826,153 @@ export default function App() {
               {/* Scrollable Content */}
               <div className="flex-1 overflow-y-auto min-h-0 py-3.5 space-y-4 pr-1">
                 {/* Timestamp Row */}
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-slate-400" />
-                    <span>{t.dateTimeLabel}</span>
-                  </label>
-                  <input
-                    type="text"
-                    id="edit-order-timestamp"
-                    value={editingTimestamp}
-                    onChange={(e) => setEditingTimestamp(e.target.value)}
-                    className="w-full px-3 py-2 text-xs font-mono font-medium rounded-xl border border-slate-200 bg-slate-50 text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900"
-                  />
+                <div className="space-y-2 bg-slate-50/80 p-3 rounded-2xl border border-slate-200/80">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-slate-400" />
+                      <span>{t.dateTimeLabel}</span>
+                    </label>
+                    <button
+                      type="button"
+                      id="edit-order-now-btn"
+                      onClick={() => {
+                        const now = new Date();
+                        const d = getLocalDateString(now);
+                        const tm = getLocalTimeString(now);
+                        setEditingDate(d);
+                        setEditingTime(tm);
+                        setEditingTimestamp(`${d} @ ${tm}`);
+                      }}
+                      className="px-2 py-0.5 text-[10px] font-bold rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 shadow-2xs cursor-pointer transition-colors active:scale-95"
+                    >
+                      {lang === "th" ? "⚡ เวลาปัจจุบัน" : "⚡ Current Time"}
+                    </button>
+                  </div>
+
+                  {/* Date and 24-Hour Time Quick Pickers */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <span className="text-[9px] font-bold text-slate-500 uppercase">{lang === "th" ? "วันที่" : "Date"}</span>
+                      <input
+                        type="date"
+                        id="edit-order-date-picker"
+                        value={editingDate}
+                        onChange={(e) => {
+                          const newD = e.target.value;
+                          setEditingDate(newD);
+                          if (newD) {
+                            const newTs = `${newD} @ ${editingTime || getLocalTimeString()}`;
+                            setEditingTimestamp(newTs);
+                          }
+                        }}
+                        className="w-full px-2.5 py-1.5 text-xs font-mono font-bold rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-bold text-slate-500 uppercase">{lang === "th" ? "เวลา (24 ชั่วโมง)" : "Time (24-Hour)"}</span>
+                        <span className="text-[8px] font-mono font-bold text-slate-400">HH:mm:ss</span>
+                      </div>
+                      <input
+                        type="text"
+                        id="edit-order-time-picker"
+                        inputMode="numeric"
+                        value={editingTime}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setEditingTime(val);
+                          const parsed = parseDateTimeInput(val, editingDate, val);
+                          if (parsed.time) {
+                            setEditingTimestamp(`${editingDate || parsed.date} @ ${parsed.time}`);
+                          }
+                        }}
+                        placeholder="HH:mm:ss (เช่น 20:42:09)"
+                        className="w-full px-2.5 py-1.5 text-xs font-mono font-bold rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900"
+                      />
+                    </div>
+                  </div>
+
+                  {/* 24-Hour Pickers: Hour (00-23), Minute (00-59), Second (00-59) - Pure 24h, No AM/PM */}
+                  {(() => {
+                    const parts = (editingTime || "00:00:00").split(":");
+                    const curH = (parts[0] || "00").padStart(2, "0");
+                    const curM = (parts[1] || "00").padStart(2, "0");
+                    const curS = (parts[2] || "00").padStart(2, "0");
+                    return (
+                      <div className="space-y-1 pt-1 border-t border-slate-200/50">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[8.5px] font-bold text-slate-500 uppercase">
+                            {lang === "th" ? "เลือกเวลา 24 ชม. (ชม. : นาที : วินาที)" : "24-Hour Selectors (Hr : Min : Sec)"}
+                          </span>
+                          <span className="text-[8.5px] font-mono font-black text-emerald-600">
+                            {curH}:{curM}:{curS} น.
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-1.5">
+                          <div className="space-y-0.5">
+                            <span className="text-[8px] text-slate-400 font-bold block text-center uppercase">{lang === "th" ? "ชั่วโมง (00-23)" : "Hr (00-23)"}</span>
+                            <select
+                              id="edit-order-hour"
+                              value={curH}
+                              onChange={(e) => handle24HourTimeChange(e.target.value, curM, curS)}
+                              className="w-full px-1.5 py-1 text-xs font-mono font-bold rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer text-center"
+                            >
+                              {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0")).map(h => (
+                                <option key={h} value={h}>{h} {lang === "th" ? "น." : "h"}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="space-y-0.5">
+                            <span className="text-[8px] text-slate-400 font-bold block text-center uppercase">{lang === "th" ? "นาที (00-59)" : "Min (00-59)"}</span>
+                            <select
+                              id="edit-order-minute"
+                              value={curM}
+                              onChange={(e) => handle24HourTimeChange(curH, e.target.value, curS)}
+                              className="w-full px-1.5 py-1 text-xs font-mono font-bold rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer text-center"
+                            >
+                              {Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0")).map(m => (
+                                <option key={m} value={m}>{m} {lang === "th" ? "นท." : "m"}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="space-y-0.5">
+                            <span className="text-[8px] text-slate-400 font-bold block text-center uppercase">{lang === "th" ? "วินาที (00-59)" : "Sec (00-59)"}</span>
+                            <select
+                              id="edit-order-second"
+                              value={curS}
+                              onChange={(e) => handle24HourTimeChange(curH, curM, e.target.value)}
+                              className="w-full px-1.5 py-1 text-xs font-mono font-bold rounded-xl border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer text-center"
+                            >
+                              {Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0")).map(s => (
+                                <option key={s} value={s}>{s} {lang === "th" ? "วิ." : "s"}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Formatted Full Timestamp Input */}
+                  <div className="pt-1 border-t border-slate-200/50">
+                    <span className="text-[8.5px] font-bold text-slate-400 uppercase block mb-0.5">
+                      {lang === "th" ? "ข้อความเวลาสมบูรณ์ (แก้ไขข้อความได้โดยตรง)" : "Full Timestamp (Editable)"}
+                    </span>
+                    <input
+                      type="text"
+                      id="edit-order-timestamp"
+                      value={editingTimestamp}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setEditingTimestamp(val);
+                        const parsed = parseDateTimeInput(val, editingDate, editingTime);
+                        setEditingDate(parsed.date);
+                        setEditingTime(parsed.time);
+                      }}
+                      placeholder="YYYY-MM-DD @ HH:mm:ss"
+                      className="w-full px-3 py-1.5 text-xs font-mono font-medium rounded-xl border border-slate-200 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900"
+                    />
+                  </div>
                 </div>
 
                 {/* Payment Method Row */}

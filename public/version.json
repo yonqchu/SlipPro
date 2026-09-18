@@ -1,4 +1,4 @@
 {
-  "version": "2.3.0",
-  "releaseNotes": "Removed Send to LINE button from History transactions list for cleaner action controls."
+  "version": "2.3.3",
+  "releaseNotes": "Placed payment method and slip badges together on a new line below timestamp and order total for cleaner layout."
 }

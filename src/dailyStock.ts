@@ -58,6 +58,119 @@ export const getLocalTimeString = (d: Date = new Date()): string => {
   return formatter.format(d); // Returns HH:mm:ss
 };
 
+export const parseDateTimeInput = (
+  inputStr: string,
+  defaultDate: string = getLocalDateString(),
+  defaultTime: string = getLocalTimeString()
+): { date: string; time: string; timestamp: string; rawTimestamp: number } => {
+  const trimmed = (inputStr || "").trim();
+  if (!trimmed) {
+    const raw = Date.now();
+    return {
+      date: defaultDate,
+      time: defaultTime,
+      timestamp: `${defaultDate} @ ${defaultTime}`,
+      rawTimestamp: raw,
+    };
+  }
+
+  // Preserve any custom annotation suffix like (Recovered) or (กู้คืนยอดขาย)
+  let suffix = "";
+  const suffixMatch = trimmed.match(/\s*(\([^)]+\))\s*$/);
+  let core = trimmed;
+  if (suffixMatch) {
+    suffix = ` ${suffixMatch[1]}`;
+    core = trimmed.replace(/\s*(\([^)]+\))\s*$/, "").trim();
+  }
+
+  let datePart = "";
+  let timePart = "";
+
+  // 1. Check for standard SlipPro format: "YYYY-MM-DD @ HH:mm:ss" or "YYYY-MM-DD @ HH:mm"
+  if (core.includes(" @ ")) {
+    const parts = core.split(" @ ");
+    datePart = parts[0].trim();
+    timePart = parts[1].trim();
+  } 
+  // 2. Check for "YYYY-MM-DD HH:mm:ss" or "YYYY-MM-DDTHH:mm:ss"
+  else if (/^\d{4}-\d{2}-\d{2}[T\s]\d{1,2}:\d{2}(:\d{2})?/.test(core)) {
+    const match = core.match(/^(\d{4}-\d{2}-\d{2})[T\s](\d{1,2}:\d{2}(?::\d{2})?)/);
+    if (match) {
+      datePart = match[1];
+      timePart = match[2];
+    }
+  }
+  // 3. Time only: "HH:mm:ss" or "HH:mm"
+  else if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(core)) {
+    datePart = defaultDate;
+    timePart = core;
+  }
+  // 4. Date only: "YYYY-MM-DD"
+  else if (/^\d{4}-\d{2}-\d{2}$/.test(core)) {
+    datePart = core;
+    timePart = defaultTime;
+  } 
+  // 5. Try standard date parsing
+  else {
+    const parsed = new Date(core);
+    if (!isNaN(parsed.getTime())) {
+      datePart = getLocalDateString(parsed);
+      timePart = getLocalTimeString(parsed);
+    } else {
+      const timeMatch = core.match(/\b\d{1,2}:\d{2}(?::\d{2})?\b/);
+      const dateMatch = core.match(/\b\d{4}-\d{2}-\d{2}\b/);
+      datePart = dateMatch ? dateMatch[0] : defaultDate;
+      timePart = timeMatch ? timeMatch[0] : defaultTime;
+    }
+  }
+
+  // Convert any 12-hour AM/PM time into 24-hour time
+  const ampmMatch = timePart.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([ap]\.?m\.?)$/i);
+  if (ampmMatch) {
+    let hr = parseInt(ampmMatch[1], 10);
+    const min = ampmMatch[2];
+    const sec = ampmMatch[3] || "00";
+    const isPm = ampmMatch[4].toLowerCase().startsWith("p");
+    if (isPm && hr < 12) hr += 12;
+    if (!isPm && hr === 12) hr = 0;
+    timePart = `${String(hr).padStart(2, "0")}:${min}:${sec}`;
+  }
+
+  // Normalize timePart format: Ensure HH:mm:ss
+  if (/^\d{1,2}:\d{2}$/.test(timePart)) {
+    timePart = `${timePart.padStart(5, '0')}:00`;
+  } else if (/^\d{1}:\d{2}:\d{2}$/.test(timePart)) {
+    timePart = `0${timePart}`;
+  } else if (!timePart) {
+    timePart = defaultTime;
+  }
+
+  // Normalize datePart: fallback to defaultDate if not YYYY-MM-DD
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+    datePart = defaultDate;
+  }
+
+  // Calculate epoch millisecond rawTimestamp accurately in local timezone
+  let rawTimestamp = Date.now();
+  try {
+    const [y, m, d] = datePart.split("-").map(Number);
+    const [hr, min, sec] = timePart.split(":").map(Number);
+    const parsedObj = new Date(y, m - 1, d, hr || 0, min || 0, sec || 0);
+    if (!isNaN(parsedObj.getTime())) {
+      rawTimestamp = parsedObj.getTime();
+    }
+  } catch (e) {}
+
+  const fullTimestamp = `${datePart} @ ${timePart}${suffix}`;
+
+  return {
+    date: datePart,
+    time: timePart,
+    timestamp: fullTimestamp,
+    rawTimestamp,
+  };
+};
+
 // Ensure opening stock exists for today or given date
 export const ensureOpeningStock = (
   dateStr: string,
