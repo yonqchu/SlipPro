@@ -1,4 +1,4 @@
-const CACHE_NAME = 'slippro-cache-v40';
+const CACHE_NAME = 'slippro-cache-v43';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',

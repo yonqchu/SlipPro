@@ -38,7 +38,9 @@ import {
   ExternalLink,
   Wifi,
   Layers,
-  Pencil
+  Pencil,
+  ShoppingBag,
+  Eye
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import QRCode from "qrcode";
@@ -72,8 +74,6 @@ import {
   getSlipFromIDB,
   getBackupTransactionsFromIDB,
   deleteSlipFromIDB,
-  findDuplicateTransactions,
-  DuplicateGroup,
 } from "./utils/storage";
 
 // Types
@@ -658,12 +658,9 @@ export default function App() {
   const [showManagerModal, setShowManagerModal] = useState(false);
   const [managerSubTab, setManagerSubTab] = useState<"profile" | "items" | "sync" | "system">("profile");
 
-  // Order Deletion & Duplicate Order Cleaner States
+  // Order Deletion States
   const [orderToDelete, setOrderToDelete] = useState<Transaction | null>(null);
   const [returnStockOnDelete, setReturnStockOnDelete] = useState(true);
-  const [showDuplicatesModal, setShowDuplicatesModal] = useState(false);
-  const [selectedDuplicateIds, setSelectedDuplicateIds] = useState<string[]>([]);
-  const [returnStockOnDuplicates, setReturnStockOnDuplicates] = useState(false);
   
   // Edit Order States
   const [orderToEdit, setOrderToEdit] = useState<Transaction | null>(null);
@@ -677,6 +674,7 @@ export default function App() {
   const [editingTimestamp, setEditingTimestamp] = useState("");
   const [adjustStockOnEdit, setAdjustStockOnEdit] = useState(true);
   const [selectedAddItemToEdit, setSelectedAddItemToEdit] = useState("");
+  const [editingSlipThumbnail, setEditingSlipThumbnail] = useState<string | null>(null);
   
   // App Version & Update State
   const [updateInfo, setUpdateInfo] = useState<{
@@ -720,6 +718,7 @@ export default function App() {
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const editSlipFileInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const qrFileInputRef = useRef<HTMLInputElement>(null);
   const html5QrCodeRef = useRef<any>(null);
@@ -1269,49 +1268,6 @@ export default function App() {
     triggerToast(t.orderDeletedSuccess);
   };
 
-  // Bulk / Selective delete duplicate orders
-  const handleDeleteDuplicates = (duplicateIds: string[], returnStock: boolean) => {
-    if (!duplicateIds || duplicateIds.length === 0) return;
-    const idSet = new Set(duplicateIds);
-
-    const deletedTxs = transactions.filter(t => idSet.has(t.id));
-    const updated = transactions.filter(t => !idSet.has(t.id));
-    setTransactions(updated);
-    safeSaveTransactions(updated);
-
-    deletedTxs.forEach(tx => deleteSlipFromIDB(tx.id).catch(() => {}));
-
-    if (returnStock) {
-      const stockAdditionMap: Record<string, number> = {};
-      deletedTxs.forEach(tx => {
-        (tx.items || []).forEach(it => {
-          const key = it.nameEN || it.nameTH || "";
-          stockAdditionMap[key] = (stockAdditionMap[key] || 0) + (it.quantity || 0);
-        });
-      });
-
-      const updatedMenuItems = menuItems.map(item => {
-        if (!item.trackStock) return item;
-        const addEN = stockAdditionMap[item.nameEN] || 0;
-        const addTH = stockAdditionMap[item.nameTH] || 0;
-        const totalAdd = addEN + addTH;
-        if (totalAdd > 0) {
-          return {
-            ...item,
-            currentStock: item.currentStock + totalAdd
-          };
-        }
-        return item;
-      });
-      setMenuItems(updatedMenuItems);
-      localStorage.setItem("slippro_stock_v2", JSON.stringify(updatedMenuItems));
-    }
-
-    setShowDuplicatesModal(false);
-    setSelectedDuplicateIds([]);
-    triggerToast(t.duplicatesRemovedSuccess.replace("{count}", String(deletedTxs.length)));
-  };
-
   // Edit Order Handlers
   const handleOpenEditOrder = (tx: Transaction) => {
     setOrderToEdit(tx);
@@ -1320,6 +1276,7 @@ export default function App() {
     setEditingTimestamp(tx.timestamp || "");
     setAdjustStockOnEdit(true);
     setSelectedAddItemToEdit("");
+    setEditingSlipThumbnail(tx.slipThumbnail || null);
   };
 
   const handleUpdateItemQuantity = (index: number, delta: number) => {
@@ -1369,6 +1326,30 @@ export default function App() {
       ];
     });
     setSelectedAddItemToEdit("");
+  };
+
+  const handleEditSlipFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      try {
+        const timestampStr = editingTimestamp || `${getLocalDateString()} ${getLocalTimeString()}`;
+        const { previewUrl, microThumb } = await processSlipImageSafe(file, timestampStr);
+        setEditingSlipThumbnail(microThumb || previewUrl);
+        setEditingPaymentMethod("เงินโอน");
+        triggerToast(lang === "th" ? "แนบรูปสลิปเรียบร้อย" : "Slip image attached");
+      } catch (err) {
+        console.error("Failed to process slip image:", err);
+        triggerToast(lang === "th" ? "ไม่สามารถประมวลผลรูปภาพได้" : "Failed to process image");
+      }
+    }
+  };
+
+  const handleRemoveEditSlip = () => {
+    setEditingSlipThumbnail(null);
+    if (editSlipFileInputRef.current) {
+      editSlipFileInputRef.current.value = "";
+    }
+    triggerToast(lang === "th" ? "ลบรูปสลิปแล้ว" : "Slip image removed");
   };
 
   const handleSaveEditOrder = () => {
@@ -1424,11 +1405,18 @@ export default function App() {
           items: editingItems,
           total: calculatedTotal,
           paymentMethod: editingPaymentMethod,
-          timestamp: editingTimestamp || t.timestamp
+          timestamp: editingTimestamp || t.timestamp,
+          slipThumbnail: editingSlipThumbnail || undefined
         };
       }
       return t;
     });
+
+    if (editingSlipThumbnail) {
+      saveSlipToIDB(orderToEdit.id, editingSlipThumbnail).catch(console.error);
+    } else if (orderToEdit.slipThumbnail && !editingSlipThumbnail) {
+      deleteSlipFromIDB(orderToEdit.id).catch(console.error);
+    }
 
     setTransactions(updatedTransactions);
     safeSaveTransactions(updatedTransactions);
@@ -1811,13 +1799,6 @@ export default function App() {
   const safeTransactions = Array.isArray(transactions) ? transactions : [];
   const safeRestockEvents = Array.isArray(restockEvents) ? restockEvents : [];
   const safeMenuItems = Array.isArray(menuItems) ? menuItems : [];
-
-  const reportDuplicates = findDuplicateTransactions(safeTransactions, selectedReportDate);
-  const totalReportDuplicatesCount = reportDuplicates.reduce((sum, g) => sum + g.duplicates.length, 0);
-
-  const historyDuplicates = findDuplicateTransactions(safeTransactions, selectedHistoryDate);
-  const totalHistoryDuplicatesCount = historyDuplicates.reduce((sum, g) => sum + g.duplicates.length, 0);
-  const duplicateTxIdSet = new Set(historyDuplicates.flatMap(g => g.duplicates.map(d => d.id)));
 
   const dayTx = safeTransactions.filter(tx => {
     if (!tx) return false;
@@ -2721,12 +2702,10 @@ export default function App() {
               const txDate = tx.timestamp ? tx.timestamp.split(" @ ")[0] : "";
               return txDate === selectedHistoryDate || (typeof tx.timestamp === "string" && tx.timestamp.includes(selectedHistoryDate));
             });
-            const historyDuplicates = findDuplicateTransactions(safeTransactions, selectedHistoryDate);
-            const totalHistoryDuplicatesCount = historyDuplicates.reduce((sum, g) => sum + g.duplicates.length, 0);
-            const duplicateTxIdSet = new Set(historyDuplicates.flatMap(g => g.duplicates.map(d => d.id)));
 
             const pageSize = 10;
-            const totalPages = Math.ceil(historyDayTx.length / pageSize) || 1;
+            const totalSalesCount = historyDayTx.length;
+            const totalPages = Math.ceil(totalSalesCount / pageSize) || 1;
             const currentHistoryPage = Math.min(historyPage, totalPages);
             const startIndex = (currentHistoryPage - 1) * pageSize;
             const visibleTx = historyDayTx.slice(startIndex, startIndex + pageSize);
@@ -2734,229 +2713,234 @@ export default function App() {
             return (
             <div className="flex flex-col min-h-full bg-slate-50">
               <div className="w-full p-5 flex items-center justify-between bg-slate-900 text-white sticky top-0 z-10 shadow-md">
-                  <div className="flex items-center gap-3">
-                    <History className="w-5 h-5 text-emerald-400" />
-                    <div>
-                      <h2 className="text-sm font-bold uppercase tracking-wider">
-                        {t.transactionHistory}
-                      </h2>
-                      <p className="text-[10px] text-slate-300 font-semibold uppercase font-mono mt-0.5">
-                        {historyDayTx.length} {lang === "th" ? "รายการ" : "LOGS"}
+                <div className="flex items-center gap-3">
+                  <History className="w-5 h-5 text-emerald-400" />
+                  <div>
+                    <h2 className="text-sm font-bold uppercase tracking-wider">
+                      {t.transactionHistory}
+                    </h2>
+                    <p className="text-[10px] text-slate-300 font-semibold uppercase font-mono mt-0.5">
+                      {totalSalesCount} {lang === "th" ? "รายการ" : "LOGS"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Date Navigation Bar for History */}
+              <div className="bg-white border-b border-slate-200/80 p-3 flex items-center justify-between gap-2">
+                <button
+                  onClick={() => {
+                    const [y, m, d] = selectedHistoryDate.split("-").map(Number);
+                    const dt = new Date(y, m - 1, d);
+                    dt.setDate(dt.getDate() - 1);
+                    setSelectedHistoryDate(getLocalDateString(dt));
+                    setHistoryPage(1);
+                  }}
+                  className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all cursor-pointer flex items-center justify-center"
+                >
+                  <ChevronLeft className="w-4 h-4 stroke-[2.5]" />
+                </button>
+
+                <div className="flex-1 flex items-center justify-center gap-2">
+                  <div className="relative flex items-center">
+                    <Calendar className="w-4 h-4 text-slate-500 absolute left-3 pointer-events-none" />
+                    <input
+                      type="date"
+                      value={selectedHistoryDate}
+                      max={getLocalDateString()}
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          setSelectedHistoryDate(e.target.value);
+                          setHistoryPage(1);
+                        }
+                      }}
+                      className="pl-9 pr-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 text-xs font-bold font-mono focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => {
+                    const [y, m, d] = selectedHistoryDate.split("-").map(Number);
+                    const dt = new Date(y, m - 1, d);
+                    dt.setDate(dt.getDate() + 1);
+                    setSelectedHistoryDate(getLocalDateString(dt));
+                    setHistoryPage(1);
+                  }}
+                  disabled={selectedHistoryDate >= getLocalDateString()}
+                  className={`p-2 rounded-xl border transition-all flex items-center justify-center ${
+                    selectedHistoryDate >= getLocalDateString()
+                      ? "bg-slate-50 text-slate-300 border-slate-100 cursor-not-allowed"
+                      : "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200 cursor-pointer"
+                  }`}
+                >
+                  <ChevronRight className="w-4 h-4 stroke-[2.5]" />
+                </button>
+              </div>
+
+              {/* Recover Lost Today's Sales Banner in History Tab */}
+              {selectedHistoryDate === getLocalDateString() && lostSales.hasDiscrepancy && (
+                <div id="history-lost-sales-recovery-banner" className="m-4 p-4 bg-amber-50 border border-amber-200 rounded-2xl shadow-sm space-y-2.5">
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                      <AlertTriangle className="w-4 h-4 stroke-[2.5]" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="text-xs font-bold text-amber-900">
+                        {t.recoveredSalesBannerTitle}
+                      </h4>
+                      <p className="text-[11px] text-amber-700 mt-0.5 leading-relaxed">
+                        {t.recoveredSalesBannerDesc
+                          .replace("{units}", String(lostSales.totalMissingUnits))
+                          .replace("{amount}", String(lostSales.totalEstimatedAmount))}
                       </p>
+                      <div className="mt-2.5 flex items-center gap-2">
+                        <button
+                          type="button"
+                          id="history-restore-lost-sales-btn"
+                          onClick={handleRestoreLostSalesToday}
+                          className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center gap-1.5"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>{t.restoreSalesBtn}</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
+              )}
 
-                {/* Date Navigation Bar for History */}
-                <div className="bg-white border-b border-slate-200/80 p-3 flex items-center justify-between gap-2">
-                  <button
-                    onClick={() => {
-                      const [y, m, d] = selectedHistoryDate.split("-").map(Number);
-                      const dt = new Date(y, m - 1, d);
-                      dt.setDate(dt.getDate() - 1);
-                      setSelectedHistoryDate(getLocalDateString(dt));
-                      setHistoryPage(1);
-                    }}
-                    className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all cursor-pointer flex items-center justify-center"
-                  >
-                    <ChevronLeft className="w-4 h-4 stroke-[2.5]" />
-                  </button>
-
-                  <div className="flex-1 flex items-center justify-center gap-2">
-                    <div className="relative flex items-center">
-                      <Calendar className="w-4 h-4 text-slate-500 absolute left-3 pointer-events-none" />
-                      <input
-                        type="date"
-                        value={selectedHistoryDate}
-                        max={getLocalDateString()}
-                        onChange={(e) => {
-                          if (e.target.value) {
-                            setSelectedHistoryDate(e.target.value);
-                            setHistoryPage(1);
-                          }
-                        }}
-                        className="pl-9 pr-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-900 text-xs font-bold font-mono focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer"
-                      />
-                    </div>
+              {/* Daily Activity Timeline - Full Width */}
+              <div className="flex-1 p-4 sm:p-6" id="transaction-history-list">
+                {totalSalesCount === 0 ? (
+                  <div className="p-12 text-center flex flex-col items-center justify-center space-y-3 bg-white rounded-2xl border border-slate-200">
+                    <Clock className="w-10 h-10 text-slate-300" />
+                    <p className="text-sm text-slate-400 italic font-medium">{t.noTransactions}</p>
                   </div>
-
-                  <button
-                    onClick={() => {
-                      const [y, m, d] = selectedHistoryDate.split("-").map(Number);
-                      const dt = new Date(y, m - 1, d);
-                      dt.setDate(dt.getDate() + 1);
-                      setSelectedHistoryDate(getLocalDateString(dt));
-                      setHistoryPage(1);
-                    }}
-                    disabled={selectedHistoryDate >= getLocalDateString()}
-                    className={`p-2 rounded-xl border transition-all flex items-center justify-center ${
-                      selectedHistoryDate >= getLocalDateString()
-                        ? "bg-slate-50 text-slate-300 border-slate-100 cursor-not-allowed"
-                        : "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200 cursor-pointer"
-                    }`}
-                  >
-                    <ChevronRight className="w-4 h-4 stroke-[2.5]" />
-                  </button>
-                </div>
-
-                {/* Recover Lost Today's Sales Banner in History Tab */}
-                {selectedHistoryDate === getLocalDateString() && lostSales.hasDiscrepancy && (
-                  <div id="history-lost-sales-recovery-banner" className="m-4 p-4 bg-amber-50 border border-amber-200 rounded-2xl shadow-sm space-y-2.5">
-                    <div className="flex items-start gap-3">
-                      <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
-                        <AlertTriangle className="w-4 h-4 stroke-[2.5]" />
-                      </div>
-                      <div className="flex-1">
-                        <h4 className="text-xs font-bold text-amber-900">
-                          {t.recoveredSalesBannerTitle}
-                        </h4>
-                        <p className="text-[11px] text-amber-700 mt-0.5 leading-relaxed">
-                          {t.recoveredSalesBannerDesc
-                            .replace("{units}", String(lostSales.totalMissingUnits))
-                            .replace("{amount}", String(lostSales.totalEstimatedAmount))}
-                        </p>
-                        <div className="mt-2.5 flex items-center gap-2">
-                          <button
-                            type="button"
-                            id="history-restore-lost-sales-btn"
-                            onClick={handleRestoreLostSalesToday}
-                            className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center gap-1.5"
-                          >
-                            <RotateCcw className="w-3.5 h-3.5" />
-                            <span>{t.restoreSalesBtn}</span>
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Duplicate Orders Alert Banner in History Tab */}
-                {totalHistoryDuplicatesCount > 0 && (
-                  <div id="history-duplicate-orders-banner" className="m-4 p-4 bg-amber-50 border border-amber-200 rounded-2xl shadow-sm space-y-2.5">
-                    <div className="flex items-start gap-3">
-                      <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
-                        <AlertTriangle className="w-4 h-4 stroke-[2.5]" />
-                      </div>
-                      <div className="flex-1">
-                        <h4 className="text-xs font-bold text-amber-900">
-                          {t.duplicateOrdersDetected.replace("{count}", String(totalHistoryDuplicatesCount))}
-                        </h4>
-                        <p className="text-[11px] text-amber-700 mt-0.5 leading-relaxed">
-                          {t.duplicateOrdersDesc}
-                        </p>
-                        <div className="mt-2.5 flex items-center gap-2">
-                          <button
-                            type="button"
-                            id="history-clean-duplicates-btn"
-                            onClick={() => {
-                              setSelectedDuplicateIds(historyDuplicates.flatMap(g => g.duplicates.map(d => d.id)));
-                              setShowDuplicatesModal(true);
-                            }}
-                            className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center gap-1.5"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            <span>{t.cleanDuplicatesBtn}</span>
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <div className="bg-white divide-y divide-slate-100 flex-1" id="transaction-history-list">
-                  {historyDayTx.length === 0 ? (
-                    <div className="p-10 text-center flex flex-col items-center justify-center space-y-3 opacity-60">
-                      <History className="w-8 h-8 text-slate-300" />
-                      <p className="text-sm text-slate-400 italic font-medium">{t.noTransactions}</p>
-                    </div>
-                  ) : (
-                    visibleTx.map((tx, idx) => {
+                ) : (
+                  <div className="relative pl-7 sm:pl-9 space-y-4 before:absolute before:left-3 sm:before:left-3.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
+                    {visibleTx.map((tx, idx) => {
+                      const isCash = tx.paymentMethod === "เงินสด" || (!tx.paymentMethod && !tx.slipThumbnail);
                       const isTransfer = tx.paymentMethod === "เงินโอน" || (!tx.paymentMethod && !!tx.slipThumbnail);
-                      const isDuplicate = duplicateTxIdSet.has(tx.id);
+                      const isOnline = tx.paymentMethod === "ออนไลน์";
+
                       return (
-                        <div id={`tx-${tx.id}`} key={tx.id || idx} className="p-5 space-y-3.5 hover:bg-slate-50/50 transition-colors">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-[11px] font-mono text-slate-500 flex items-center gap-1.5 font-semibold">
-                                <Clock className="w-3.5 h-3.5" />
-                                {tx.timestamp}
-                              </span>
-                              {/* Payment Method Badge (Editable) */}
-                              <select
-                                value={tx.paymentMethod || (isTransfer ? "เงินโอน" : "เงินสด")}
-                                onChange={(e) => handleEditPaymentMethod(tx.id, e.target.value as "เงินสด" | "เงินโอน" | "ออนไลน์")}
-                                className={`inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full border focus:outline-none appearance-none cursor-pointer ${
-                                  tx.paymentMethod === "ออนไลน์"
-                                    ? "bg-purple-50 text-purple-700 border-purple-200"
+                        <div id={`tx-${tx.id}`} key={tx.id || idx} className="relative group">
+                          {/* Activity Timeline Dot Icon */}
+                          <div
+                            className={`absolute -left-7 sm:-left-9 top-2 w-6 h-6 rounded-full border-2 border-white flex items-center justify-center shadow-xs ${
+                              isCash
+                                ? "bg-emerald-500 text-white"
+                                : isTransfer
+                                ? "bg-blue-500 text-white"
+                                : "bg-purple-500 text-white"
+                            }`}
+                          >
+                            <ShoppingBag className="w-3 h-3" />
+                          </div>
+
+                          {/* Activity Card */}
+                          <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 space-y-2.5 hover:border-slate-300 transition-colors">
+                            {/* Card Header Row */}
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-xs font-mono font-bold text-slate-500 flex items-center gap-1">
+                                  <Clock className="w-3.5 h-3.5 text-slate-400" />
+                                  {tx.timestamp}
+                                </span>
+
+                                <span
+                                  className={`text-[9px] font-black px-2 py-0.5 rounded-full ${
+                                    isCash
+                                      ? "bg-emerald-100 text-emerald-800"
+                                      : isTransfer
+                                      ? "bg-blue-100 text-blue-800"
+                                      : "bg-purple-100 text-purple-800"
+                                  }`}
+                                >
+                                  {lang === "th"
+                                    ? isCash
+                                      ? "💵 เงินสด"
+                                      : isTransfer
+                                      ? "📲 เงินโอน"
+                                      : "🌐 ออนไลน์"
+                                    : isCash
+                                    ? "Cash"
                                     : isTransfer
-                                      ? "bg-blue-50 text-blue-700 border-blue-200"
-                                      : "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                }`}
-                              >
-                                <option value="เงินสด">💵 {lang === "th" ? "เงินสด" : "Cash"}</option>
-                                <option value="เงินโอน">📲 {lang === "th" ? "เงินโอน" : "Transfer"}</option>
-                                <option value="ออนไลน์">🌐 {lang === "th" ? "ออนไลน์" : "Online"}</option>
-                              </select>
-                            </div>
-                            <span className="text-sm font-mono font-black text-slate-900 bg-slate-100 text-slate-900 px-2.5 py-1 rounded-lg border border-slate-200">
-                              {tx.paymentMethod === "ออนไลน์" ? (lang === "th" ? "ไม่ระบุ" : "N/A") : `${t.thb}${tx.total}`}
-                            </span>
-                          </div>
-
-                          {/* List items sold */}
-                          <div className="space-y-2 pl-3 border-l-2 border-slate-100">
-                            {tx.items.map((it, i) => (
-                              <p key={i} className="text-xs text-slate-600 font-medium flex justify-between items-center">
-                                <span className="flex items-center gap-1.5">
-                                  <span className="w-1 h-1 rounded-full bg-slate-300 block"></span>
-                                  {lang === "en" ? it.nameEN : it.nameTH} 
-                                  <span className="font-bold text-slate-900 text-[10px] bg-slate-100 px-1.5 rounded">x{it.quantity}</span>
+                                    ? "Transfer"
+                                    : "Online"}
                                 </span>
-                                <span className="font-mono text-slate-400 text-[11px]">{t.thb}{it.price * it.quantity}</span>
-                              </p>
-                            ))}
-                          </div>
 
-                          {/* Slip status & actions */}
-                          <div className="flex flex-wrap items-center justify-between gap-2.5 pt-3 border-t border-slate-50 text-[10px]">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-slate-500 flex items-center gap-1.5">
-                                {tx.slipThumbnail ? (
-                                  <>
-                                    <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]"></span>
-                                    <span className="text-slate-700 font-bold uppercase tracking-wider">{t.slipAttached}</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <span className="inline-block w-2 h-2 rounded-full bg-slate-300"></span>
-                                    <span className="text-slate-400 font-semibold uppercase tracking-wider">{t.slipNotAttached}</span>
-                                  </>
+                                {tx.slipThumbnail && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleViewSlipFull(tx.id, tx.slipThumbnail)}
+                                    className="text-[9px] font-bold text-emerald-700 bg-emerald-100/70 hover:bg-emerald-100 px-2 py-0.5 rounded-full transition-colors cursor-pointer flex items-center gap-1"
+                                  >
+                                    <ImageIcon className="w-3 h-3" />
+                                    <span>{lang === "th" ? "มีสลิป" : "Slip"}</span>
+                                  </button>
                                 )}
-                              </span>
 
-                              {tx.lowStockAlerts && tx.lowStockAlerts.length > 0 && (
-                                <span className="text-red-600 font-black tracking-wider text-[9px] px-2 py-0.5 bg-red-50 border border-red-200 rounded-md uppercase">
-                                  {t.lowStockAlertText}
-                                </span>
-                              )}
+                                {tx.lowStockAlerts && tx.lowStockAlerts.length > 0 && (
+                                  <span className="text-[9px] font-black text-rose-600 bg-rose-100/80 px-2 py-0.5 rounded-full">
+                                    {t.lowStockAlertText}
+                                  </span>
+                                )}
+                              </div>
+
+                              <span className="text-xs sm:text-sm font-black font-mono text-emerald-600">
+                                {isOnline ? (lang === "th" ? "ไม่ระบุ" : "N/A") : `${t.thb}${tx.total.toLocaleString()}`}
+                              </span>
                             </div>
 
-                            {/* Action Buttons: Edit, Delete Order & Share to LINE */}
-                            <div className="flex items-center gap-1.5 flex-wrap ml-auto">
-                              {isDuplicate && (
-                                <span className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-700 bg-amber-100 px-2 py-1 rounded-lg border border-amber-200">
-                                  <AlertTriangle className="w-3 h-3 text-amber-600" />
-                                  {t.possibleDuplicateBadge}
-                                </span>
-                              )}
+                            {/* Items Breakdown */}
+                            <div className="text-[11px] sm:text-xs text-slate-700 space-y-1 pt-1.5 border-t border-slate-200/60 font-medium">
+                              {(Array.isArray(tx.items) ? tx.items : []).map((it, iIdx) => (
+                                <div key={iIdx} className="flex justify-between items-center">
+                                  <span>
+                                    • {lang === "en" ? (it.nameEN || it.nameTH) : (it.nameTH || it.nameEN)} x {it.quantity}
+                                  </span>
+                                  <span className="font-mono text-slate-500 text-[11px]">
+                                    {isOnline ? "-" : `${t.thb}${(it.price * it.quantity).toLocaleString()}`}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
 
+                            {/* Slip Thumbnail in history card */}
+                            {tx.slipThumbnail && (
+                              <div className="pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleViewSlipFull(tx.id, tx.slipThumbnail)}
+                                  className="inline-flex items-center gap-2 p-1.5 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 transition-all cursor-pointer group text-left max-w-sm w-full shadow-2xs"
+                                >
+                                  <img
+                                    src={tx.slipThumbnail}
+                                    alt="Captured receipt attachment"
+                                    className="w-10 h-10 object-cover rounded-lg border border-slate-200 shrink-0"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-[11px] font-bold text-slate-700 group-hover:text-slate-900 flex items-center gap-1">
+                                      <ImageIcon className="w-3.5 h-3.5 text-slate-500" />
+                                      <span>{lang === "th" ? "สลิปที่แนบ (แตะเพื่อดูภาพขยาย)" : "Attached Slip (Tap to expand)"}</span>
+                                    </p>
+                                    <p className="text-[9px] text-slate-400 font-mono truncate">ID: {tx.id}</p>
+                                  </div>
+                                </button>
+                              </div>
+                            )}
+
+                            {/* Well Positioned Buttons: Edit, Delete & Resend to LINE */}
+                            <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-slate-200/60">
                               <button
                                 type="button"
                                 id={`edit-order-${tx.id}`}
                                 onClick={() => handleOpenEditOrder(tx)}
                                 title={t.editOrderBtn}
-                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] cursor-pointer border border-slate-200 transition-all active:scale-95 whitespace-nowrap"
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-slate-700 font-bold text-[11px] cursor-pointer border border-slate-200 transition-all active:scale-95 shadow-2xs whitespace-nowrap"
                               >
                                 <Pencil className="w-3.5 h-3.5 text-slate-600" />
                                 <span>{t.editOrderBtn}</span>
@@ -2967,10 +2951,10 @@ export default function App() {
                                 id={`delete-order-${tx.id}`}
                                 onClick={() => {
                                   setOrderToDelete(tx);
-                                  setReturnStockOnDelete(!isDuplicate && !tx.id.startsWith("txn_recovered_"));
+                                  setReturnStockOnDelete(!tx.id.startsWith("txn_recovered_"));
                                 }}
                                 title={t.deleteOrderBtn}
-                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-[11px] cursor-pointer border border-rose-200/80 transition-all active:scale-95 whitespace-nowrap"
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-[11px] cursor-pointer border border-rose-200 transition-all active:scale-95 whitespace-nowrap"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                                 <span>{t.deleteOrderBtn}</span>
@@ -2987,63 +2971,39 @@ export default function App() {
                               </button>
                             </div>
                           </div>
-
-                          {/* Slip Thumbnail in history */}
-                          {tx.slipThumbnail && (
-                            <div className="pt-2">
-                              <details className="cursor-pointer group bg-slate-50 rounded-xl p-2.5 border border-slate-200/60 hover:border-slate-300 transition-colors">
-                                <summary className="text-[10px] text-slate-600 hover:text-slate-900 flex items-center gap-1.5 select-none font-bold uppercase tracking-wider">
-                                  <ImageIcon className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600" />
-                                  <span>{lang === "th" ? "ดูรูปภาพสลิปที่แนบ" : "View Captured Slip"}</span>
-                                </summary>
-                                <div 
-                                  className="mt-3 rounded-xl overflow-hidden bg-white max-w-[240px] shadow-sm border border-slate-200 cursor-zoom-in group/history-img relative"
-                                  onClick={() => handleViewSlipFull(tx.id, tx.slipThumbnail)}
-                                >
-                                  <img
-                                    src={tx.slipThumbnail}
-                                    alt="Captured receipt attachment"
-                                    className="w-full object-contain aspect-square group-hover/history-img:scale-[1.02] transition-transform"
-                                    referrerPolicy="no-referrer"
-                                  />
-                                  <div className="absolute inset-0 bg-black/0 group-hover/history-img:bg-black/20 transition-colors flex items-center justify-center">
-                                    <span className="text-white text-xs font-bold bg-black/60 px-2 py-1 rounded-lg opacity-0 group-hover/history-img:opacity-100 transition-opacity flex items-center gap-1">
-                                      <ImageIcon className="w-3 h-3" />
-                                      <span>{lang === "th" ? "ดูภาพ" : "View"}</span>
-                                    </span>
-                                  </div>
-                                </div>
-                              </details>
-                            </div>
-                          )}
                         </div>
                       );
-                    })
-                  )}
-                  
-                  {/* Pagination Controls */}
-                  {totalPages > 1 && (
-                    <div className="p-4 border-t border-slate-100 flex items-center justify-between bg-slate-50">
-                      <button
-                        disabled={currentHistoryPage <= 1}
-                        onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
-                        className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                      >
-                        {lang === "th" ? "ก่อนหน้า" : "Prev"}
-                      </button>
-                      <span className="text-xs font-mono font-bold text-slate-500">
-                        {currentHistoryPage} / {totalPages}
-                      </span>
-                      <button
-                        disabled={currentHistoryPage >= totalPages}
-                        onClick={() => setHistoryPage(p => Math.min(totalPages, p + 1))}
-                        className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                      >
-                        {lang === "th" ? "ถัดไป" : "Next"}
-                      </button>
-                    </div>
-                  )}
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Pagination Controls - 10 Sells Per Page */}
+              {totalPages > 1 && (
+                <div className="p-4 border-t border-slate-200 bg-white flex items-center justify-between sticky bottom-0 z-10 shadow-xs">
+                  <button
+                    disabled={currentHistoryPage <= 1}
+                    onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
+                    className="px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1.5 transition-all active:scale-95"
+                  >
+                    <ChevronLeft className="w-4 h-4 stroke-[2.5]" />
+                    <span>{lang === "th" ? "ก่อนหน้า" : "Prev"}</span>
+                  </button>
+                  <span className="text-xs font-mono font-bold text-slate-600 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+                    {lang === "th"
+                      ? `หน้า ${currentHistoryPage} จาก ${totalPages} (${totalSalesCount} รายการ)`
+                      : `Page ${currentHistoryPage} of ${totalPages} (${totalSalesCount} sales)`}
+                  </span>
+                  <button
+                    disabled={currentHistoryPage >= totalPages}
+                    onClick={() => setHistoryPage(p => Math.min(totalPages, p + 1))}
+                    className="px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1.5 transition-all active:scale-95"
+                  >
+                    <span>{lang === "th" ? "ถัดไป" : "Next"}</span>
+                    <ChevronRight className="w-4 h-4 stroke-[2.5]" />
+                  </button>
                 </div>
+              )}
             </div>
             );
           })()}
@@ -3128,39 +3088,6 @@ export default function App() {
                         >
                           <RotateCcw className="w-3.5 h-3.5" />
                           <span>{t.restoreSalesBtn}</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Duplicate Orders Banner in Z-Report */}
-              {totalReportDuplicatesCount > 0 && (
-                <div id="zreport-duplicate-orders-banner" className="p-4 bg-amber-50 border border-amber-200 rounded-2xl shadow-sm space-y-2.5">
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
-                      <AlertTriangle className="w-4 h-4 stroke-[2.5]" />
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="text-xs font-bold text-amber-900">
-                        {t.duplicateOrdersDetected.replace("{count}", String(totalReportDuplicatesCount))}
-                      </h4>
-                      <p className="text-[11px] text-amber-700 mt-0.5 leading-relaxed">
-                        {t.duplicateOrdersDesc}
-                      </p>
-                      <div className="mt-2.5 flex items-center gap-2">
-                        <button
-                          type="button"
-                          id="zreport-clean-duplicates-btn"
-                          onClick={() => {
-                            setSelectedDuplicateIds(reportDuplicates.flatMap(g => g.duplicates.map(d => d.id)));
-                            setShowDuplicatesModal(true);
-                          }}
-                          className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center gap-1.5"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>{t.cleanDuplicatesBtn}</span>
                         </button>
                       </div>
                     </div>
@@ -3396,14 +3323,6 @@ export default function App() {
                     setPreselectedRestockItemId(itemId);
                     setRestockModalOpen(true);
                   }}
-                />
-
-                {/* Activity Timeline (Orders & Restocks) */}
-                <DailyTimeline
-                  events={dayTimelineEvents}
-                  lang={lang}
-                  currencySymbol={t.thb}
-                  onViewSlip={(img) => setFullScreenImage(img)}
                 />
 
                 {/* Procurement / Shopping Section */}
@@ -3824,195 +3743,6 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Review & Clean Duplicate Orders Modal */}
-      <AnimatePresence>
-        {showDuplicatesModal && (
-          <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white border border-slate-200 rounded-[2rem] p-6 max-w-lg w-full max-h-[88vh] flex flex-col shadow-2xl text-left"
-            >
-              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-100 shrink-0">
-                    <AlertTriangle className="w-5 h-5 stroke-[2.5]" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-black tracking-tight text-slate-950">
-                      {t.cleanDuplicatesModalTitle}
-                    </h3>
-                    <p className="text-[11px] text-slate-500 font-medium">
-                      {t.cleanDuplicatesModalDesc}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowDuplicatesModal(false)}
-                  className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Scrollable list of duplicate groups */}
-              <div className="flex-1 overflow-y-auto py-3 space-y-4 pr-1">
-                {(() => {
-                  const targetDuplicates = activeTab === "history" ? historyDuplicates : reportDuplicates;
-                  if (targetDuplicates.length === 0) {
-                    return (
-                      <div className="text-center py-10 text-slate-400 text-xs">
-                        {lang === "th" ? "ไม่พบออเดอร์ซ้ำในวันที่เลือก" : "No duplicate orders found for this date"}
-                      </div>
-                    );
-                  }
-
-                  return targetDuplicates.map((group, gIdx) => {
-                    return (
-                      <div
-                        key={group.fingerprint || gIdx}
-                        className="p-3.5 bg-slate-50/80 rounded-2xl border border-slate-200/80 space-y-2.5"
-                      >
-                        <div className="flex justify-between items-center border-b border-slate-200/60 pb-2">
-                          <span className="text-xs font-black text-slate-900 line-clamp-1">
-                            {group.itemsSummary}
-                          </span>
-                          <span className="text-xs font-mono font-black text-slate-900 bg-white px-2 py-0.5 rounded-lg border border-slate-200">
-                            ฿{group.total}
-                          </span>
-                        </div>
-
-                        {/* Original Order (Protected) */}
-                        <div className="p-2.5 rounded-xl bg-emerald-50/60 border border-emerald-200/80 flex items-center justify-between text-xs">
-                          <div className="space-y-0.5">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-[9px] font-black uppercase px-1.5 py-0.5 bg-emerald-600 text-white rounded">
-                                {t.originalBadge}
-                              </span>
-                              <span className="text-[11px] font-mono text-slate-600 font-semibold">
-                                {group.original.timestamp}
-                              </span>
-                            </div>
-                            <span className="text-[10px] text-slate-500">
-                              {group.original.paymentMethod || "เงินสด"} • ID: {group.original.id}
-                            </span>
-                          </div>
-                          <span className="text-[10px] text-emerald-700 font-bold">
-                            {lang === "th" ? "✓ เก็บรักษารายการนี้" : "✓ Kept"}
-                          </span>
-                        </div>
-
-                        {/* Duplicates list */}
-                        <div className="space-y-1.5 pt-1">
-                          {group.duplicates.map(dup => {
-                            const isChecked = selectedDuplicateIds.includes(dup.id);
-                            return (
-                              <div
-                                key={dup.id}
-                                className={`p-2.5 rounded-xl border flex items-center justify-between transition-colors ${
-                                  isChecked
-                                    ? "bg-rose-50/70 border-rose-200"
-                                    : "bg-white border-slate-200/80"
-                                }`}
-                              >
-                                <label className="flex items-center gap-2 cursor-pointer flex-1">
-                                  <input
-                                    type="checkbox"
-                                    checked={isChecked}
-                                    onChange={(e) => {
-                                      if (e.target.checked) {
-                                        setSelectedDuplicateIds(prev => [...prev, dup.id]);
-                                      } else {
-                                        setSelectedDuplicateIds(prev => prev.filter(id => id !== dup.id));
-                                      }
-                                    }}
-                                    className="rounded text-rose-600 focus:ring-rose-500 cursor-pointer"
-                                  />
-                                  <div className="space-y-0.5">
-                                    <div className="flex items-center gap-1.5">
-                                      <span className="text-[9px] font-black uppercase px-1.5 py-0.5 bg-rose-600 text-white rounded">
-                                        {t.duplicateBadge}
-                                      </span>
-                                      <span className="text-[11px] font-mono text-slate-600">
-                                        {dup.timestamp}
-                                      </span>
-                                    </div>
-                                    <span className="text-[10px] text-slate-400">
-                                      {dup.paymentMethod || "เงินสด"} • ID: {dup.id}
-                                    </span>
-                                  </div>
-                                </label>
-
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteDuplicates([dup.id], returnStockOnDuplicates)}
-                                  className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-100 transition-colors cursor-pointer"
-                                  title={t.deleteOrderBtn}
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  });
-                })()}
-              </div>
-
-              {/* Stock Return Option for Duplicates */}
-              <label className="flex items-start gap-2.5 p-3 my-2 rounded-xl bg-slate-50 border border-slate-200/80 cursor-pointer text-left">
-                <input
-                  type="checkbox"
-                  checked={returnStockOnDuplicates}
-                  onChange={(e) => setReturnStockOnDuplicates(e.target.checked)}
-                  className="mt-0.5 rounded text-slate-900 focus:ring-slate-900 cursor-pointer"
-                />
-                <div>
-                  <span className="text-xs font-bold text-slate-800">
-                    {t.returnStockForDuplicatesCheckbox}
-                  </span>
-                  <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
-                    {t.returnStockForDuplicatesExplanation}
-                  </p>
-                </div>
-              </label>
-
-              {/* Footer Actions */}
-              <div className="flex gap-2.5 pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  id="confirm-delete-duplicates-btn"
-                  disabled={selectedDuplicateIds.length === 0}
-                  onClick={() => handleDeleteDuplicates(selectedDuplicateIds, returnStockOnDuplicates)}
-                  className={`flex-1 py-3 px-4 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 ${
-                    selectedDuplicateIds.length === 0
-                      ? "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200"
-                      : "bg-rose-600 hover:bg-rose-700 text-white cursor-pointer shadow-lg shadow-rose-600/20"
-                  }`}
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>
-                    {t.deleteSelectedDuplicatesBtn.replace("{count}", String(selectedDuplicateIds.length))}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  id="cancel-duplicates-modal-btn"
-                  onClick={() => setShowDuplicatesModal(false)}
-                  className="py-3 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 font-bold text-xs cursor-pointer transition-all active:scale-95"
-                >
-                  {t.cancelBtn}
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
       {/* Edit Order Modal */}
       <AnimatePresence>
         {orderToEdit && (
@@ -4051,7 +3781,7 @@ export default function App() {
               {/* Scrollable Content */}
               <div className="flex-1 overflow-y-auto min-h-0 py-3.5 space-y-4 pr-1">
                 {/* Timestamp Row */}
-                <div className="space-y-1">
+                <div className="space-y-1.5">
                   <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
                     <Clock className="w-3.5 h-3.5 text-slate-400" />
                     <span>{t.dateTimeLabel}</span>
@@ -4065,7 +3795,7 @@ export default function App() {
                   />
                 </div>
 
-                {/* Payment Method Row - Dedicated Full Width Row */}
+                {/* Payment Method Row */}
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">
                     {t.paymentMethodLabel}
@@ -4113,6 +3843,84 @@ export default function App() {
                   </div>
                 </div>
 
+                {/* Slip Image Section */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                      <ImageIcon className="w-3.5 h-3.5 text-slate-400" />
+                      <span>{lang === "th" ? "รูปภาพสลิปใบเสร็จ" : "Receipt Slip Image"}</span>
+                    </label>
+                  </div>
+
+                  <input
+                    type="file"
+                    accept="image/*"
+                    ref={editSlipFileInputRef}
+                    onChange={handleEditSlipFileChange}
+                    className="hidden"
+                  />
+
+                  {editingSlipThumbnail ? (
+                    <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-2xl flex items-center gap-3">
+                      <div
+                        className="w-14 h-14 rounded-xl overflow-hidden border border-slate-200 bg-white cursor-pointer relative shrink-0 group"
+                        onClick={() => setFullScreenImage(editingSlipThumbnail)}
+                        title={lang === "th" ? "ดูภาพขนาดเต็ม" : "View Fullscreen"}
+                      >
+                        <img
+                          src={editingSlipThumbnail}
+                          alt="Slip Preview"
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                          <Eye className="w-4 h-4 text-white" />
+                        </div>
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-slate-800 flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+                          <span>{lang === "th" ? "แนบรูปสลิปแล้ว" : "Slip attached"}</span>
+                        </p>
+                        <p className="text-[10px] text-slate-400 truncate mt-0.5">
+                          {lang === "th" ? "แตะที่รูปเพื่อดูรูปใหญ่" : "Tap thumbnail to view full image"}
+                        </p>
+
+                        <div className="flex items-center gap-2 mt-2">
+                          <button
+                            type="button"
+                            onClick={() => editSlipFileInputRef.current?.click()}
+                            className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 text-[11px] font-bold cursor-pointer transition-all active:scale-95 shadow-2xs flex items-center gap-1"
+                          >
+                            <Camera className="w-3 h-3 text-slate-500" />
+                            <span>{lang === "th" ? "เปลี่ยนรูป" : "Change"}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleRemoveEditSlip}
+                            className="px-2.5 py-1 rounded-lg bg-rose-50 border border-rose-200 hover:bg-rose-100 text-rose-600 text-[11px] font-bold cursor-pointer transition-all active:scale-95 flex items-center gap-1"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            <span>{lang === "th" ? "ลบรูป" : "Remove"}</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => editSlipFileInputRef.current?.click()}
+                      className="w-full py-3 px-4 border-2 border-dashed border-slate-200 hover:border-slate-300 rounded-2xl bg-slate-50 hover:bg-slate-100/70 transition-all flex items-center justify-center gap-2 text-slate-600 cursor-pointer active:scale-98"
+                    >
+                      <Camera className="w-4 h-4 text-slate-400" />
+                      <span className="text-xs font-bold">
+                        {lang === "th" ? "+ แนบรูปภาพสลิป" : "+ Attach Slip Image"}
+                      </span>
+                    </button>
+                  )}
+                </div>
+
                 {/* Items in Order */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
@@ -4132,27 +3940,32 @@ export default function App() {
                           key={idx}
                           className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2.5 shadow-2xs"
                         >
-                          {/* Row 1: Item Name and Delete Button */}
+                          {/* Row 1: Item Name and Remove Button */}
                           <div className="flex items-center justify-between gap-2">
                             <div className="min-w-0 flex-1">
                               <span className="font-bold text-slate-900 text-xs sm:text-sm block truncate">
                                 {lang === "en" ? (item.nameEN || item.nameTH) : (item.nameTH || item.nameEN)}
                               </span>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveItemFromEdit(idx)}
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer shrink-0"
-                              title={lang === "th" ? "ลบรายการนี้" : "Remove item"}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="font-mono font-black text-slate-900 text-xs sm:text-sm">
+                                ฿{item.price * item.quantity}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveItemFromEdit(idx)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                title={lang === "th" ? "ลบรายการนี้" : "Remove item"}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
                           </div>
 
-                          {/* Row 2: Unit Price on Left, Stepper & Line Subtotal on Right */}
-                          <div className="flex flex-wrap items-center justify-between gap-2.5 pt-2 border-t border-slate-200/60">
+                          {/* Row 2: Price Input and Quantity Stepper separated with clear gap */}
+                          <div className="flex items-center justify-between gap-3 pt-2 border-t border-slate-200/60">
                             {/* Unit Price input */}
-                            <div className="flex items-center gap-1.5 shrink-0">
+                            <div className="flex items-center gap-1.5">
                               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">
                                 {t.unitPriceLabel}
                               </span>
@@ -4168,35 +3981,25 @@ export default function App() {
                               </div>
                             </div>
 
-                            {/* Stepper & Line Subtotal */}
-                            <div className="flex items-center gap-3 shrink-0 ml-auto">
-                              {/* Stepper */}
-                              <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-0.5 shadow-2xs">
-                                <button
-                                  type="button"
-                                  onClick={() => handleUpdateItemQuantity(idx, -1)}
-                                  className="w-6 h-6 rounded-md hover:bg-slate-100 text-slate-700 flex items-center justify-center font-bold cursor-pointer active:scale-95"
-                                >
-                                  <Minus className="w-3.5 h-3.5" />
-                                </button>
-                                <span className="w-7 text-center font-mono font-black text-xs text-slate-900">
-                                  {item.quantity}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleUpdateItemQuantity(idx, 1)}
-                                  className="w-6 h-6 rounded-md hover:bg-slate-100 text-slate-700 flex items-center justify-center font-bold cursor-pointer active:scale-95"
-                                >
-                                  <Plus className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-
-                              {/* Subtotal */}
-                              <div className="text-right min-w-[60px]">
-                                <span className="font-mono font-black text-slate-900 text-xs sm:text-sm">
-                                  ฿{item.price * item.quantity}
-                                </span>
-                              </div>
+                            {/* Stepper */}
+                            <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-0.5 shadow-2xs shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateItemQuantity(idx, -1)}
+                                className="w-7 h-7 rounded-md hover:bg-slate-100 text-slate-700 flex items-center justify-center font-bold cursor-pointer active:scale-95"
+                              >
+                                <Minus className="w-3.5 h-3.5" />
+                              </button>
+                              <span className="w-8 text-center font-mono font-black text-xs text-slate-900">
+                                {item.quantity}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateItemQuantity(idx, 1)}
+                                className="w-7 h-7 rounded-md hover:bg-slate-100 text-slate-700 flex items-center justify-center font-bold cursor-pointer active:scale-95"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                              </button>
                             </div>
                           </div>
                         </div>
@@ -4205,7 +4008,7 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Add new item to order selector - Stacks neatly on mobile */}
+                {/* Add new item to order selector */}
                 <div className="p-3 rounded-2xl bg-slate-100/70 border border-slate-200/80">
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                     <select
